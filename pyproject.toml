@@ -1,0 +1,15 @@
+[project]
+name = "youtube-endless-scroll-blocker"
+version = "1.0.0"
+description = "A Windows tray application that covers non-video YouTube pages in Brave."
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "PySide6==6.10.2",
+    "uiautomation==2.0.29",
+    "pywin32==311",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+pythonpath = ["."]
