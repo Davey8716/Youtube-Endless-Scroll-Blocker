@@ -50,7 +50,7 @@ class TrayRuntime:
         self._shutting_down = False
         self._overlay = BlackOverlay()
         self._controller = OverlayController(self._overlay)
-        self._latest_result = DetectionResult(False)
+        self._latest_result = DetectionResult()
 
         icon = QIcon(str(resource_path("assets/app.ico")))
         self._tray = QSystemTrayIcon(icon, app)

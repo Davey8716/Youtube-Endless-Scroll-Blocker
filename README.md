@@ -6,6 +6,8 @@ A Windows tray application that covers non-video YouTube pages in a maximized Br
 
 - Starts enabled and remains in the Windows system tray.
 - Shows a click-blocking black rectangle at `(260, 171)` with size `1631 x 852`, relative to the active Brave monitor.
+- Shows a separate click-blocking rectangle at `(1223, 176)` with size `677 x 852` beside a non-fullscreen regular YouTube video.
+- Hides the regular-video suggestions overlay when YouTube or Brave is fullscreen.
 - Shows the overlay on non-video `youtube.com` pages.
 - Hides the overlay on video routes such as `/watch`, `/shorts`, `/live`, `/embed`, `/v`, and `/clip`.
 - Hides the overlay on handle and channel pages so their search and navigation controls remain usable.

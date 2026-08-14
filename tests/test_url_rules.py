@@ -1,6 +1,6 @@
 import pytest
 
-from youtube_scroll_blocker.url_rules import parse_browser_url, should_show_overlay
+from youtube_scroll_blocker.url_rules import OverlayMode, overlay_mode_for_url, parse_browser_url, should_show_overlay
 
 
 @pytest.mark.parametrize(
@@ -20,6 +20,42 @@ def test_non_video_youtube_urls_show_overlay(url: str) -> None:
 @pytest.mark.parametrize("route", ["watch", "shorts/id", "live/id", "embed/id", "v/id", "clip/id"])
 def test_video_routes_do_not_show_overlay(route: str) -> None:
     assert not should_show_overlay(f"https://www.youtube.com/{route}?feature=test")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.youtube.com/watch?v=suwW4PFgD54",
+        "www.youtube.com/WATCH?v=suwW4PFgD54&feature=share",
+        "https://m.youtube.com/watch?feature=test&v=video-id",
+    ],
+)
+def test_valid_watch_urls_use_watch_overlay(url: str) -> None:
+    assert overlay_mode_for_url(url) is OverlayMode.WATCH
+    assert not should_show_overlay(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.youtube.com/watch",
+        "https://www.youtube.com/watch?feature=share",
+        "https://www.youtube.com/watch?v=",
+    ],
+)
+def test_watch_route_without_video_id_has_no_overlay(url: str) -> None:
+    assert overlay_mode_for_url(url) is OverlayMode.NONE
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.youtube.com/shorts/suwW4PFgD54",
+        "www.youtube.com/SHORTS/suwW4PFgD54?feature=share",
+    ],
+)
+def test_shorts_pages_remain_exempt(url: str) -> None:
+    assert overlay_mode_for_url(url) is OverlayMode.NONE
 
 
 @pytest.mark.parametrize(

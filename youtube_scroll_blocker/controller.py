@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Protocol
 
 from .browser_detection import DetectionResult
-from .geometry import Rect, overlay_rect_for_monitor
+from .geometry import Rect, overlay_rect_for_monitor, watch_overlay_rect_for_monitor
+from .url_rules import OverlayMode
 
 
 class OverlayView(Protocol):
@@ -32,7 +33,11 @@ class OverlayController:
         if not self.enabled or self.menu_open or not result.should_show or result.monitor_rect is None:
             self._overlay.hide_overlay()
             return
-        self._overlay.show_at(overlay_rect_for_monitor(result.monitor_rect))
+        if result.mode is OverlayMode.WATCH:
+            rect = watch_overlay_rect_for_monitor(result.monitor_rect)
+        else:
+            rect = overlay_rect_for_monitor(result.monitor_rect)
+        self._overlay.show_at(rect)
 
     def hide(self) -> None:
         self._overlay.hide_overlay()

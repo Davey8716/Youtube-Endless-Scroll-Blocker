@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from urllib.parse import SplitResult, urlsplit
+from enum import Enum, auto
+from urllib.parse import SplitResult, parse_qs, urlsplit
 
 
 OVERLAY_EXCLUDED_PATH_SEGMENTS = frozenset(
@@ -16,6 +17,12 @@ YOU_SECTION_FEED_ROUTES = frozenset(
         ("feed", "library"),
     }
 )
+
+
+class OverlayMode(Enum):
+    NONE = auto()
+    STANDARD = auto()
+    WATCH = auto()
 
 
 def parse_browser_url(raw_url: str | None) -> SplitResult | None:
@@ -41,26 +48,36 @@ def parse_browser_url(raw_url: str | None) -> SplitResult | None:
     return parsed
 
 
-def should_show_overlay(raw_url: str | None) -> bool:
-    """Return whether a URL is a YouTube page that should be covered."""
+def overlay_mode_for_url(raw_url: str | None) -> OverlayMode:
+    """Classify which overlay, if any, applies to an address-bar URL."""
     parsed = parse_browser_url(raw_url)
     if parsed is None:
-        return False
+        return OverlayMode.NONE
 
     host = parsed.hostname.rstrip(".").lower()
     if host == "youtu.be" or host.endswith(".youtu.be"):
-        return False
+        return OverlayMode.NONE
     if host != "youtube.com" and not host.endswith(".youtube.com"):
-        return False
+        return OverlayMode.NONE
 
     normalized_path = parsed.path.strip("/").lower()
     path_segments = tuple(normalized_path.split("/")) if normalized_path else ()
     if path_segments in YOU_SECTION_FEED_ROUTES:
-        return False
+        return OverlayMode.NONE
 
     first_segment = path_segments[0] if path_segments else ""
+    if first_segment == "watch":
+        video_ids = parse_qs(parsed.query).get("v", [])
+        return OverlayMode.WATCH if any(video_id.strip() for video_id in video_ids) else OverlayMode.NONE
     if host == "studio.youtube.com" and first_segment == "video":
-        return False
+        return OverlayMode.NONE
     if first_segment.startswith("@"):
-        return False
-    return first_segment not in OVERLAY_EXCLUDED_PATH_SEGMENTS
+        return OverlayMode.NONE
+    if first_segment in OVERLAY_EXCLUDED_PATH_SEGMENTS:
+        return OverlayMode.NONE
+    return OverlayMode.STANDARD
+
+
+def should_show_overlay(raw_url: str | None) -> bool:
+    """Return whether the original standard overlay applies to a URL."""
+    return overlay_mode_for_url(raw_url) is OverlayMode.STANDARD
