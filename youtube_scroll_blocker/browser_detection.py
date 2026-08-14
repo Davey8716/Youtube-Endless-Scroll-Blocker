@@ -22,6 +22,7 @@ class DetectionResult:
     mode: OverlayMode = OverlayMode.NONE
     monitor_rect: tuple[int, int, int, int] | None = None
     url: str | None = None
+    browser_hwnd: int | None = None
 
     @property
     def should_show(self) -> bool:
@@ -36,6 +37,13 @@ class AddressBarState:
 
 def _is_window_maximized(hwnd: int) -> bool:
     return win32gui.GetWindowPlacement(hwnd)[1] == win32con.SW_SHOWMAXIMIZED
+
+
+def _is_brave_window(hwnd: int) -> bool:
+    if not hwnd or not win32gui.IsWindow(hwnd) or not win32gui.IsWindowVisible(hwnd):
+        return False
+    _thread_id, process_id = win32process.GetWindowThreadProcessId(hwnd)
+    return _process_executable_name(process_id) == "brave.exe"
 
 
 def _extended_frame_bounds(hwnd: int) -> tuple[int, int, int, int]:
@@ -162,30 +170,34 @@ class BraveAddressBarReader:
 class BrowserDetector:
     def __init__(self, address_reader: BraveAddressBarReader | None = None) -> None:
         self._address_reader = address_reader or BraveAddressBarReader()
+        self._tracked_hwnd: int | None = None
 
     def detect(self) -> DetectionResult:
         try:
-            hwnd = win32gui.GetForegroundWindow()
-            if not hwnd or not win32gui.IsWindowVisible(hwnd):
-                return DetectionResult()
+            foreground_hwnd = win32gui.GetForegroundWindow()
+            if _is_brave_window(foreground_hwnd):
+                self._tracked_hwnd = foreground_hwnd
 
-            _thread_id, process_id = win32process.GetWindowThreadProcessId(hwnd)
-            if _process_executable_name(process_id) != "brave.exe":
+            hwnd = self._tracked_hwnd
+            if not hwnd or not _is_brave_window(hwnd):
+                self._tracked_hwnd = None
                 return DetectionResult()
-            if not _is_window_maximized(hwnd):
+            if win32gui.IsIconic(hwnd) or not _is_window_maximized(hwnd):
+                self._tracked_hwnd = None
                 return DetectionResult()
 
             monitor = win32api.MonitorFromWindow(hwnd, win32con.MONITOR_DEFAULTTONEAREST)
             monitor_rect = tuple(int(value) for value in win32api.GetMonitorInfo(monitor)["Monitor"])
             address_bar = self._address_reader.inspect(hwnd)
             if _is_fullscreen_window(hwnd, monitor_rect, address_bar.visible):
-                return DetectionResult(url=address_bar.url)
+                return DetectionResult(url=address_bar.url, browser_hwnd=hwnd)
             if not address_bar.visible or not address_bar.url:
-                return DetectionResult(url=address_bar.url)
+                return DetectionResult(url=address_bar.url, browser_hwnd=hwnd)
 
             mode = overlay_mode_for_url(address_bar.url)
             if mode is OverlayMode.NONE:
-                return DetectionResult(url=address_bar.url)
-            return DetectionResult(mode, monitor_rect=monitor_rect, url=address_bar.url)
+                return DetectionResult(url=address_bar.url, browser_hwnd=hwnd)
+            return DetectionResult(mode, monitor_rect=monitor_rect, url=address_bar.url, browser_hwnd=hwnd)
         except Exception:
+            self._tracked_hwnd = None
             return DetectionResult()

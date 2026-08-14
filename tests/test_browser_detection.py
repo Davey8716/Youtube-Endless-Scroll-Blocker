@@ -12,6 +12,14 @@ class StubAddressReader:
         return AddressBarState(self.url, self.visible)
 
 
+class MappingAddressReader:
+    def __init__(self, addresses: dict[int, AddressBarState]) -> None:
+        self.addresses = addresses
+
+    def inspect(self, hwnd: int) -> AddressBarState:
+        return self.addresses[hwnd]
+
+
 class StubPattern:
     def __init__(self, value: str) -> None:
         self.Value = value
@@ -51,12 +59,38 @@ class StubControl:
         return StubPattern(self._value) if self._value is not None else None
 
 
-def configure_active_brave(monkeypatch, *, maximized: bool = True, fullscreen: bool = False) -> None:
-    monkeypatch.setattr(browser_detection.win32gui, "GetForegroundWindow", lambda: 101)
-    monkeypatch.setattr(browser_detection.win32gui, "IsWindowVisible", lambda _hwnd: True)
-    monkeypatch.setattr(browser_detection, "_is_window_maximized", lambda _hwnd: maximized)
-    monkeypatch.setattr(browser_detection.win32process, "GetWindowThreadProcessId", lambda _hwnd: (1, 202))
-    monkeypatch.setattr(browser_detection, "_process_executable_name", lambda _pid: "brave.exe")
+def configure_active_brave(monkeypatch, *, maximized: bool = True, fullscreen: bool = False) -> dict:
+    environment = {
+        "foreground": 101,
+        "brave_hwnds": {101},
+        "valid_hwnds": {101, 999},
+        "visible_hwnds": {101, 999},
+        "iconic_hwnds": set(),
+        "maximized_hwnds": {101} if maximized else set(),
+    }
+    monkeypatch.setattr(browser_detection.win32gui, "GetForegroundWindow", lambda: environment["foreground"])
+    monkeypatch.setattr(browser_detection.win32gui, "IsWindow", lambda hwnd: hwnd in environment["valid_hwnds"])
+    monkeypatch.setattr(
+        browser_detection.win32gui,
+        "IsWindowVisible",
+        lambda hwnd: hwnd in environment["visible_hwnds"],
+    )
+    monkeypatch.setattr(browser_detection.win32gui, "IsIconic", lambda hwnd: hwnd in environment["iconic_hwnds"])
+    monkeypatch.setattr(
+        browser_detection,
+        "_is_window_maximized",
+        lambda hwnd: hwnd in environment["maximized_hwnds"],
+    )
+    monkeypatch.setattr(
+        browser_detection.win32process,
+        "GetWindowThreadProcessId",
+        lambda hwnd: (1, hwnd + 1000),
+    )
+    monkeypatch.setattr(
+        browser_detection,
+        "_process_executable_name",
+        lambda pid: "brave.exe" if pid - 1000 in environment["brave_hwnds"] else "notepad.exe",
+    )
     monkeypatch.setattr(
         browser_detection,
         "_is_fullscreen_window",
@@ -68,6 +102,7 @@ def configure_active_brave(monkeypatch, *, maximized: bool = True, fullscreen: b
         "GetMonitorInfo",
         lambda _monitor: {"Monitor": (0, 0, 1920, 1080)},
     )
+    return environment
 
 
 def test_active_maximized_brave_non_video_page_is_eligible(monkeypatch) -> None:
@@ -76,6 +111,7 @@ def test_active_maximized_brave_non_video_page_is_eligible(monkeypatch) -> None:
     assert result.should_show
     assert result.mode is OverlayMode.STANDARD
     assert result.monitor_rect == (0, 0, 1920, 1080)
+    assert result.browser_hwnd == 101
 
 
 def test_non_fullscreen_watch_page_uses_watch_overlay(monkeypatch) -> None:
@@ -118,10 +154,119 @@ def test_restored_brave_window_is_not_eligible(monkeypatch) -> None:
 
 
 def test_non_brave_foreground_window_is_not_eligible(monkeypatch) -> None:
-    configure_active_brave(monkeypatch)
-    monkeypatch.setattr(browser_detection, "_process_executable_name", lambda _pid: "notepad.exe")
+    environment = configure_active_brave(monkeypatch)
+    environment["foreground"] = 999
     result = BrowserDetector(StubAddressReader("https://www.youtube.com/")).detect()
     assert not result.should_show
+
+
+def test_tracked_overlay_persists_when_another_application_gets_focus(monkeypatch) -> None:
+    environment = configure_active_brave(monkeypatch)
+    detector = BrowserDetector(StubAddressReader("https://www.youtube.com/results"))
+
+    assert detector.detect().browser_hwnd == 101
+    environment["foreground"] = 999
+
+    result = detector.detect()
+    assert result.mode is OverlayMode.STANDARD
+    assert result.browser_hwnd == 101
+
+
+def test_tracked_watch_overlay_persists_when_another_application_gets_focus(monkeypatch) -> None:
+    environment = configure_active_brave(monkeypatch)
+    detector = BrowserDetector(StubAddressReader("https://www.youtube.com/watch?v=test-id"))
+
+    assert detector.detect().mode is OverlayMode.WATCH
+    environment["foreground"] = 999
+
+    result = detector.detect()
+    assert result.mode is OverlayMode.WATCH
+    assert result.browser_hwnd == 101
+
+
+def test_newly_focused_brave_window_replaces_tracked_window(monkeypatch) -> None:
+    environment = configure_active_brave(monkeypatch)
+    environment["brave_hwnds"].add(102)
+    environment["valid_hwnds"].add(102)
+    environment["visible_hwnds"].add(102)
+    environment["maximized_hwnds"].add(102)
+    reader = MappingAddressReader(
+        {
+            101: AddressBarState("https://www.youtube.com/results", True),
+            102: AddressBarState("https://www.youtube.com/@MandyCaneLane", True),
+        }
+    )
+    detector = BrowserDetector(reader)
+
+    assert detector.detect().browser_hwnd == 101
+    environment["foreground"] = 102
+
+    result = detector.detect()
+    assert result.mode is OverlayMode.NONE
+    assert result.browser_hwnd == 102
+
+    environment["foreground"] = 999
+    assert detector.detect().browser_hwnd == 102
+
+
+def test_exempt_navigation_is_detected_while_brave_is_unfocused(monkeypatch) -> None:
+    environment = configure_active_brave(monkeypatch)
+    reader = StubAddressReader("https://www.youtube.com/results")
+    detector = BrowserDetector(reader)
+
+    assert detector.detect().should_show
+    environment["foreground"] = 999
+    reader.url = "https://www.youtube.com/feed/history"
+
+    result = detector.detect()
+    assert result.mode is OverlayMode.NONE
+    assert result.browser_hwnd == 101
+
+
+def test_invalid_tracked_window_is_cleared(monkeypatch) -> None:
+    environment = configure_active_brave(monkeypatch)
+    detector = BrowserDetector(StubAddressReader("https://www.youtube.com/results"))
+
+    assert detector.detect().should_show
+    environment["foreground"] = 999
+    environment["valid_hwnds"].remove(101)
+
+    result = detector.detect()
+    assert result.mode is OverlayMode.NONE
+    assert result.browser_hwnd is None
+
+
+def test_hidden_tracked_window_is_cleared(monkeypatch) -> None:
+    environment = configure_active_brave(monkeypatch)
+    detector = BrowserDetector(StubAddressReader("https://www.youtube.com/results"))
+
+    assert detector.detect().should_show
+    environment["foreground"] = 999
+    environment["visible_hwnds"].remove(101)
+
+    assert detector.detect().browser_hwnd is None
+
+
+def test_minimized_tracked_window_is_cleared(monkeypatch) -> None:
+    environment = configure_active_brave(monkeypatch)
+    detector = BrowserDetector(StubAddressReader("https://www.youtube.com/results"))
+
+    assert detector.detect().should_show
+    environment["foreground"] = 999
+    environment["iconic_hwnds"].add(101)
+
+    assert detector.detect().browser_hwnd is None
+
+
+def test_restored_tracked_window_is_cleared(monkeypatch) -> None:
+    environment = configure_active_brave(monkeypatch)
+    detector = BrowserDetector(StubAddressReader("https://www.youtube.com/results"))
+
+    assert detector.detect().should_show
+    environment["foreground"] = 999
+    environment["maximized_hwnds"].remove(101)
+
+    assert detector.detect().browser_hwnd is None
 
 
 def test_detection_failure_hides_overlay(monkeypatch) -> None:
