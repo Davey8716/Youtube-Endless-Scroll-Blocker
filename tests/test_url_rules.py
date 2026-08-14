@@ -11,8 +11,6 @@ from youtube_scroll_blocker.url_rules import parse_browser_url, should_show_over
         "www.youtube.com/feed/subscriptions",
         "https://www.youtube.com/results?search_query=python",
         "https://music.youtube.com/explore",
-        "https://studio.youtube.com/channel/example",
-        "http://m.youtube.com/@example/videos",
     ],
 )
 def test_non_video_youtube_urls_show_overlay(url: str) -> None:
@@ -22,6 +20,26 @@ def test_non_video_youtube_urls_show_overlay(url: str) -> None:
 @pytest.mark.parametrize("route", ["watch", "shorts/id", "live/id", "embed/id", "v/id", "clip/id"])
 def test_video_routes_do_not_show_overlay(route: str) -> None:
     assert not should_show_overlay(f"https://www.youtube.com/{route}?feature=test")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.youtube.com/@MandyCaneLane",
+        "https://www.youtube.com/@MandyCaneLane/search?query=recipe",
+        "https://www.youtube.com/@MandyCaneLane/videos",
+        "http://m.youtube.com/@example/videos",
+        "https://www.youtube.com/channel/UC123/search?query=test",
+        "https://www.youtube.com/c/example",
+        "https://www.youtube.com/user/example",
+    ],
+)
+def test_channel_pages_do_not_show_overlay(url: str) -> None:
+    assert not should_show_overlay(url)
+
+
+def test_similarly_named_non_channel_route_still_shows_overlay() -> None:
+    assert should_show_overlay("https://www.youtube.com/channels")
 
 
 @pytest.mark.parametrize(

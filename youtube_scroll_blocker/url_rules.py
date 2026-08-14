@@ -3,7 +3,9 @@ from __future__ import annotations
 from urllib.parse import SplitResult, urlsplit
 
 
-VIDEO_PATH_SEGMENTS = frozenset({"watch", "shorts", "live", "embed", "v", "clip"})
+OVERLAY_EXCLUDED_PATH_SEGMENTS = frozenset(
+    {"watch", "shorts", "live", "embed", "v", "clip", "channel", "c", "user"}
+)
 
 
 def parse_browser_url(raw_url: str | None) -> SplitResult | None:
@@ -30,7 +32,7 @@ def parse_browser_url(raw_url: str | None) -> SplitResult | None:
 
 
 def should_show_overlay(raw_url: str | None) -> bool:
-    """Return whether a URL is a non-video page on a YouTube host."""
+    """Return whether a URL is a YouTube page that should be covered."""
     parsed = parse_browser_url(raw_url)
     if parsed is None:
         return False
@@ -42,4 +44,6 @@ def should_show_overlay(raw_url: str | None) -> bool:
         return False
 
     first_segment = parsed.path.lstrip("/").split("/", 1)[0].lower()
-    return first_segment not in VIDEO_PATH_SEGMENTS
+    if first_segment.startswith("@"):
+        return False
+    return first_segment not in OVERLAY_EXCLUDED_PATH_SEGMENTS
