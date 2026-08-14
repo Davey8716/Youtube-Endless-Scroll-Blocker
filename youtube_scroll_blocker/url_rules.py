@@ -4,7 +4,17 @@ from urllib.parse import SplitResult, urlsplit
 
 
 OVERLAY_EXCLUDED_PATH_SEGMENTS = frozenset(
-    {"watch", "shorts", "live", "embed", "v", "clip", "channel", "c", "user"}
+    {"watch", "shorts", "live", "embed", "v", "clip", "channel", "c", "user", "playlist"}
+)
+YOU_SECTION_FEED_ROUTES = frozenset(
+    {
+        ("feed", "you"),
+        ("feed", "history"),
+        ("feed", "playlists"),
+        ("feed", "downloads"),
+        ("feed", "courses"),
+        ("feed", "library"),
+    }
 )
 
 
@@ -43,7 +53,14 @@ def should_show_overlay(raw_url: str | None) -> bool:
     if host != "youtube.com" and not host.endswith(".youtube.com"):
         return False
 
-    first_segment = parsed.path.lstrip("/").split("/", 1)[0].lower()
+    normalized_path = parsed.path.strip("/").lower()
+    path_segments = tuple(normalized_path.split("/")) if normalized_path else ()
+    if path_segments in YOU_SECTION_FEED_ROUTES:
+        return False
+
+    first_segment = path_segments[0] if path_segments else ""
+    if host == "studio.youtube.com" and first_segment == "video":
+        return False
     if first_segment.startswith("@"):
         return False
     return first_segment not in OVERLAY_EXCLUDED_PATH_SEGMENTS

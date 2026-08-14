@@ -9,6 +9,8 @@ A Windows tray application that covers non-video YouTube pages in a maximized Br
 - Shows the overlay on non-video `youtube.com` pages.
 - Hides the overlay on video routes such as `/watch`, `/shorts`, `/live`, `/embed`, `/v`, and `/clip`.
 - Hides the overlay on handle and channel pages so their search and navigation controls remain usable.
+- Hides the overlay on every destination in YouTube's **You** section, including History, Playlists, Watch later, Liked videos, Your videos, Downloads, and Courses.
+- Hides the overlay throughout YouTube Studio's per-video content tools, including Details, Analytics, Editor, Comments, Subtitles, Claims, and Clips.
 - Provides `Turn Off` / `Turn On` and `Exit` tray-menu actions.
 - Silently exits a second launch while one instance is already running.
 
