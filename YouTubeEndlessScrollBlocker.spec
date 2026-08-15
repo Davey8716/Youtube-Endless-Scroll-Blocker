@@ -20,7 +20,10 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # This application uses PySide6 exclusively. Keep Tkinter out of the
+    # dependency graph so PyInstaller does not install its Tcl/Tk runtime hook
+    # or expect _tcl_data/_tk_data directories in the packaged application.
+    excludes=["tkinter", "_tkinter", "tk"],
     noarchive=False,
     optimize=0,
 )

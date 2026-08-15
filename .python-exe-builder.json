@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "pyinstaller": {
+    "collect_all": ["uiautomation"],
+    "exclude_modules": ["tkinter", "_tkinter", "tk"]
+  }
+}
