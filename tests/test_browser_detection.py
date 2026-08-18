@@ -121,6 +121,20 @@ def test_non_fullscreen_watch_page_uses_watch_overlay(monkeypatch) -> None:
     assert result.monitor_rect == (0, 0, 1920, 1080)
 
 
+def test_search_results_are_visible_then_clicked_video_uses_watch_overlay(monkeypatch) -> None:
+    configure_active_brave(monkeypatch)
+    address_reader = StubAddressReader("https://www.youtube.com/results?search_query=lol")
+    detector = BrowserDetector(address_reader)
+
+    search_result = detector.detect()
+    assert search_result.mode is OverlayMode.NONE
+
+    address_reader.url = "https://www.youtube.com/watch?v=test-id"
+    watch_result = detector.detect()
+    assert watch_result.mode is OverlayMode.WATCH
+    assert watch_result.monitor_rect == (0, 0, 1920, 1080)
+
+
 def test_fullscreen_watch_page_is_not_eligible(monkeypatch) -> None:
     configure_active_brave(monkeypatch, fullscreen=True)
     result = BrowserDetector(StubAddressReader("https://www.youtube.com/watch?v=test-id", visible=False)).detect()

@@ -9,12 +9,28 @@ from youtube_scroll_blocker.url_rules import OverlayMode, overlay_mode_for_url, 
         "https://www.youtube.com/",
         "youtube.com",
         "www.youtube.com/feed/subscriptions",
-        "https://www.youtube.com/results?search_query=python",
+        "https://www.youtube.com/results",
+        "https://www.youtube.com/results?search_query=",
+        "https://www.youtube.com/results?search_query=%20%20%20",
         "https://music.youtube.com/explore",
     ],
 )
 def test_non_video_youtube_urls_show_overlay(url: str) -> None:
     assert should_show_overlay(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.youtube.com/results?search_query=lol",
+        "https://www.youtube.com/results?search_query=python+tutorial",
+        "https://www.youtube.com/results?search_query=lofi%20music",
+        "www.youtube.com/results?search_query=%E7%8C%AB",
+    ],
+)
+def test_search_results_with_a_query_do_not_show_overlay(url: str) -> None:
+    assert overlay_mode_for_url(url) is OverlayMode.NONE
+    assert not should_show_overlay(url)
 
 
 @pytest.mark.parametrize("route", ["watch", "shorts/id", "live/id", "embed/id", "v/id", "clip/id"])
@@ -135,7 +151,6 @@ def test_similarly_named_non_channel_route_still_shows_overlay() -> None:
     "url",
     [
         "https://www.youtube.com/feed/subscriptions",
-        "https://www.youtube.com/results?search_query=python",
         "https://www.youtube.com/feed/history-other",
         "https://www.youtube.com/feed/history/extra",
         "https://www.youtube.com/playlists",

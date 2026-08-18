@@ -12,6 +12,7 @@ A Windows tray application that covers non-video YouTube pages in a maximized Br
 - Switches tracking immediately when a different Brave window receives focus, and hides the overlay if the tracked window closes, is hidden, minimized, restored, or cannot be inspected safely.
 - Hides the regular-video suggestions overlay when YouTube or Brave is fullscreen.
 - Shows the overlay on non-video `youtube.com` pages.
+- Hides the full-page overlay on search-result pages with a non-empty query so matching videos remain accessible.
 - Hides the overlay on video routes such as `/watch`, `/shorts`, `/live`, `/embed`, `/v`, and `/clip`.
 - Hides the overlay on handle and channel pages so their search and navigation controls remain usable.
 - Hides the overlay on every destination in YouTube's **You** section, including History, Playlists, Watch later, Liked videos, Your videos, Downloads, and Courses.

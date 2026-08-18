@@ -69,6 +69,10 @@ def overlay_mode_for_url(raw_url: str | None) -> OverlayMode:
     if first_segment == "watch":
         video_ids = parse_qs(parsed.query).get("v", [])
         return OverlayMode.WATCH if any(video_id.strip() for video_id in video_ids) else OverlayMode.NONE
+    if first_segment == "results":
+        search_queries = parse_qs(parsed.query, keep_blank_values=True).get("search_query", [])
+        if any(search_query.strip() for search_query in search_queries):
+            return OverlayMode.NONE
     if host == "studio.youtube.com" and first_segment == "video":
         return OverlayMode.NONE
     if first_segment.startswith("@"):
