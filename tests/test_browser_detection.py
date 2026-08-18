@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from youtube_scroll_blocker import browser_detection
 from youtube_scroll_blocker.browser_detection import AddressBarState, BrowserDetector
 from youtube_scroll_blocker.url_rules import OverlayMode
@@ -10,6 +12,27 @@ class StubAddressReader:
 
     def inspect(self, _hwnd: int) -> AddressBarState:
         return AddressBarState(self.url, self.visible)
+
+
+class StubPlayerTracker:
+    def __init__(self, visible: bool | None = None) -> None:
+        self.visible = visible
+        self.calls: list[tuple[int, tuple[int, int, int, int], str, bool]] = []
+        self.reset_count = 0
+
+    def visibility(
+        self,
+        hwnd: int,
+        monitor_rect: tuple[int, int, int, int],
+        url: str,
+        *,
+        active: bool,
+    ) -> bool | None:
+        self.calls.append((hwnd, monitor_rect, url, active))
+        return self.visible
+
+    def reset(self) -> None:
+        self.reset_count += 1
 
 
 class MappingAddressReader:
@@ -43,20 +66,32 @@ class StubControl:
         children: list["StubControl"] | None = None,
         value: str | None = None,
         offscreen: bool = False,
+        name: str | None = None,
+        automation_id: str | None = None,
+        bounds: StubBounds | None = None,
+        parent: "StubControl" | None = None,
     ) -> None:
         self.ControlTypeName = "EditControl" if value is not None else "WindowControl"
-        self.AutomationId = "address and search bar" if value is not None else ""
-        self.Name = "Address and search bar" if value is not None else ""
-        self.BoundingRectangle = StubBounds(200, 50, 1200, 90)
+        self.AutomationId = automation_id if automation_id is not None else (
+            "address and search bar" if value is not None else ""
+        )
+        self.Name = name if name is not None else (
+            "Address and search bar" if value is not None else ""
+        )
+        self.BoundingRectangle = bounds or StubBounds(200, 50, 1200, 90)
         self.IsOffscreen = offscreen
         self._children = children or []
         self._value = value
+        self._parent = parent
 
     def GetChildren(self) -> list["StubControl"]:
         return self._children
 
     def GetValuePattern(self) -> StubPattern | None:
         return StubPattern(self._value) if self._value is not None else None
+
+    def GetParentControl(self) -> "StubControl" | None:
+        return self._parent
 
 
 def configure_active_brave(monkeypatch, *, maximized: bool = True, fullscreen: bool = False) -> dict:
@@ -116,15 +151,23 @@ def test_active_maximized_brave_non_video_page_is_eligible(monkeypatch) -> None:
 
 def test_non_fullscreen_watch_page_uses_watch_overlay(monkeypatch) -> None:
     configure_active_brave(monkeypatch)
-    result = BrowserDetector(StubAddressReader("https://www.youtube.com/watch?v=test-id")).detect()
+    player_tracker = StubPlayerTracker(True)
+    result = BrowserDetector(
+        StubAddressReader("https://www.youtube.com/watch?v=test-id"),
+        player_tracker,
+    ).detect()
     assert result.mode is OverlayMode.WATCH
     assert result.monitor_rect == (0, 0, 1920, 1080)
+    assert result.player_visible is True
+    assert player_tracker.calls == [
+        (101, (0, 0, 1920, 1080), "https://www.youtube.com/watch?v=test-id", True)
+    ]
 
 
 def test_search_results_are_visible_then_clicked_video_uses_watch_overlay(monkeypatch) -> None:
     configure_active_brave(monkeypatch)
     address_reader = StubAddressReader("https://www.youtube.com/results?search_query=lol")
-    detector = BrowserDetector(address_reader)
+    detector = BrowserDetector(address_reader, StubPlayerTracker())
 
     search_result = detector.detect()
     assert search_result.mode is OverlayMode.NONE
@@ -188,7 +231,10 @@ def test_tracked_overlay_persists_when_another_application_gets_focus(monkeypatc
 
 def test_tracked_watch_overlay_persists_when_another_application_gets_focus(monkeypatch) -> None:
     environment = configure_active_brave(monkeypatch)
-    detector = BrowserDetector(StubAddressReader("https://www.youtube.com/watch?v=test-id"))
+    detector = BrowserDetector(
+        StubAddressReader("https://www.youtube.com/watch?v=test-id"),
+        StubPlayerTracker(),
+    )
 
     assert detector.detect().mode is OverlayMode.WATCH
     environment["foreground"] = 999

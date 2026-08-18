@@ -14,6 +14,7 @@ from .browser_detection import BrowserDetector, DetectionResult
 from .controller import OverlayController
 from .mutex import SingleInstanceMutex
 from .overlay import BlackOverlay
+from .scroll_detection import MouseWheelMonitor, WatchScrollTracker
 
 
 APP_NAME = "YouTube Endless Scroll Blocker"
@@ -49,7 +50,8 @@ class TrayRuntime:
         self._app = app
         self._shutting_down = False
         self._overlay = BlackOverlay()
-        self._controller = OverlayController(self._overlay)
+        self._comments_overlay = BlackOverlay()
+        self._controller = OverlayController(self._overlay, self._comments_overlay)
         self._latest_result = DetectionResult()
 
         icon = QIcon(str(resource_path("assets/app.ico")))
@@ -68,7 +70,11 @@ class TrayRuntime:
         self._menu.aboutToShow.connect(self._menu_opened)
         self._menu.aboutToHide.connect(self._menu_closed)
 
-        self._detector_thread = DetectionThread(BrowserDetector())
+        self._wheel_monitor = MouseWheelMonitor()
+        self._wheel_monitor.start()
+        self._detector_thread = DetectionThread(
+            BrowserDetector(player_tracker=WatchScrollTracker(self._wheel_monitor))
+        )
         self._detector_thread.result_ready.connect(self._handle_detection)
         self._detector_thread.start()
         self._tray.show()
@@ -103,6 +109,8 @@ class TrayRuntime:
         self._tray.hide()
         self._detector_thread.stop()
         self._detector_thread.wait(3000)
+        self._wheel_monitor.stop()
+        self._comments_overlay.close()
         self._overlay.close()
         self._app.quit()
 

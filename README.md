@@ -6,7 +6,9 @@ A Windows tray application that covers non-video YouTube pages in a maximized Br
 
 - Starts enabled and remains in the Windows system tray.
 - Shows a click-blocking black rectangle at `(260, 171)` with size `1631 x 852`, relative to the tracked Brave monitor.
-- Shows a separate click-blocking rectangle at `(1223, 176)` with size `677 x 852` beside a non-fullscreen regular YouTube video.
+- Shows a separate click-blocking rectangle at `(1360, 170)` with size `536 x 860` beside a non-fullscreen regular YouTube video.
+- When accumulated mouse-wheel, scrollbar-drag, or document scrolling moves the main player fully out of view, blocks the comments region from `(0, 170)` to `(1360, 1080)`, joining the existing recommendations blocker on the right; this additional blocker remains hidden before that threshold.
+- Forwards wheel input through the black overlay so scrolling upward restores the player and removes the comments blocker.
 - Keeps the overlay attached to the most recently focused maximized Brave window when focus moves to another application.
 - Keeps other applications above the overlay by placing it directly above Brave instead of making it globally always-on-top.
 - Switches tracking immediately when a different Brave window receives focus, and hides the overlay if the tracked window closes, is hidden, minimized, restored, or cannot be inspected safely.

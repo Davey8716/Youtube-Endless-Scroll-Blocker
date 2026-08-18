@@ -4,6 +4,7 @@ import ctypes
 import os
 from ctypes import wintypes
 from dataclasses import dataclass
+from typing import Protocol
 
 import uiautomation as auto
 import win32api
@@ -11,6 +12,7 @@ import win32con
 import win32gui
 import win32process
 
+from .scroll_detection import WatchScrollTracker
 from .url_rules import OverlayMode, overlay_mode_for_url
 
 
@@ -23,6 +25,7 @@ class DetectionResult:
     monitor_rect: tuple[int, int, int, int] | None = None
     url: str | None = None
     browser_hwnd: int | None = None
+    player_visible: bool | None = None
 
     @property
     def should_show(self) -> bool:
@@ -33,6 +36,19 @@ class DetectionResult:
 class AddressBarState:
     url: str | None = None
     visible: bool = False
+
+
+class PlayerVisibilityTracker(Protocol):
+    def visibility(
+        self,
+        hwnd: int,
+        monitor_rect: tuple[int, int, int, int],
+        url: str,
+        *,
+        active: bool,
+    ) -> bool | None: ...
+
+    def reset(self) -> None: ...
 
 
 def _is_window_maximized(hwnd: int) -> bool:
@@ -168,8 +184,13 @@ class BraveAddressBarReader:
 
 
 class BrowserDetector:
-    def __init__(self, address_reader: BraveAddressBarReader | None = None) -> None:
+    def __init__(
+        self,
+        address_reader: BraveAddressBarReader | None = None,
+        player_tracker: PlayerVisibilityTracker | None = None,
+    ) -> None:
         self._address_reader = address_reader or BraveAddressBarReader()
+        self._player_tracker = player_tracker or WatchScrollTracker()
         self._tracked_hwnd: int | None = None
 
     def detect(self) -> DetectionResult:
@@ -181,9 +202,11 @@ class BrowserDetector:
             hwnd = self._tracked_hwnd
             if not hwnd or not _is_brave_window(hwnd):
                 self._tracked_hwnd = None
+                self._player_tracker.reset()
                 return DetectionResult()
             if win32gui.IsIconic(hwnd) or not _is_window_maximized(hwnd):
                 self._tracked_hwnd = None
+                self._player_tracker.reset()
                 return DetectionResult()
 
             monitor = win32api.MonitorFromWindow(hwnd, win32con.MONITOR_DEFAULTTONEAREST)
@@ -196,8 +219,26 @@ class BrowserDetector:
 
             mode = overlay_mode_for_url(address_bar.url)
             if mode is OverlayMode.NONE:
+                self._player_tracker.reset()
                 return DetectionResult(url=address_bar.url, browser_hwnd=hwnd)
-            return DetectionResult(mode, monitor_rect=monitor_rect, url=address_bar.url, browser_hwnd=hwnd)
+            player_visible = None
+            if mode is OverlayMode.WATCH:
+                player_visible = self._player_tracker.visibility(
+                    hwnd,
+                    monitor_rect,
+                    address_bar.url,
+                    active=foreground_hwnd == hwnd,
+                )
+            else:
+                self._player_tracker.reset()
+            return DetectionResult(
+                mode,
+                monitor_rect=monitor_rect,
+                url=address_bar.url,
+                browser_hwnd=hwnd,
+                player_visible=player_visible,
+            )
         except Exception:
             self._tracked_hwnd = None
+            self._player_tracker.reset()
             return DetectionResult()

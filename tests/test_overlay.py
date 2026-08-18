@@ -6,6 +6,34 @@ from youtube_scroll_blocker.geometry import Rect
 from youtube_scroll_blocker.overlay import BlackOverlay
 
 
+class StubPoint:
+    def __init__(self, x: int, y: int) -> None:
+        self._x = x
+        self._y = y
+
+    def x(self) -> int:
+        return self._x
+
+    def y(self) -> int:
+        return self._y
+
+
+class StubWheelEvent:
+    def __init__(self, delta: int, x: int, y: int) -> None:
+        self._delta = StubPoint(0, delta)
+        self._position = StubPoint(x, y)
+        self.accepted = False
+
+    def angleDelta(self) -> StubPoint:
+        return self._delta
+
+    def globalPosition(self) -> StubPoint:
+        return self._position
+
+    def accept(self) -> None:
+        self.accepted = True
+
+
 def test_overlay_is_visible_positioned_black_and_click_blocking() -> None:
     app = QApplication.instance() or QApplication([])
     owner = QWidget()
@@ -46,4 +74,33 @@ def test_overlay_is_visible_positioned_black_and_click_blocking() -> None:
     finally:
         overlay.close()
         owner.close()
+        app.processEvents()
+
+
+def test_overlay_forwards_wheel_input_to_owner(monkeypatch) -> None:
+    app = QApplication.instance() or QApplication([])
+    overlay = BlackOverlay()
+    event = StubWheelEvent(-120, 800, 500)
+    messages: list[tuple[int, int, int, int]] = []
+    monkeypatch.setattr(
+        win32gui,
+        "PostMessage",
+        lambda hwnd, message, wparam, lparam: messages.append((hwnd, message, wparam, lparam)),
+    )
+
+    try:
+        overlay._owner_hwnd = 101
+        overlay.wheelEvent(event)  # type: ignore[arg-type]
+        assert messages == [
+            (
+                101,
+                win32con.WM_MOUSEWHEEL,
+                0xFF880000,
+                800 | (500 << 16),
+            )
+        ]
+        assert event.accepted
+    finally:
+        overlay._owner_hwnd = None
+        overlay.close()
         app.processEvents()

@@ -6,7 +6,7 @@ from ctypes import wintypes
 import win32con
 import win32gui
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPalette
+from PySide6.QtGui import QColor, QPainter, QPaintEvent, QPalette, QWheelEvent
 from PySide6.QtWidgets import QWidget
 
 from .geometry import Rect
@@ -96,6 +96,26 @@ class BlackOverlay(QWidget):
         painter = QPainter(self)
         painter.fillRect(self.rect(), QColor(0, 0, 0, 255))
         painter.end()
+        event.accept()
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        """Forward wheel input to Brave while the overlay continues blocking clicks."""
+        if self._owner_hwnd is not None:
+            delta = int(event.angleDelta().y())
+            position = event.globalPosition()
+            x = int(position.x())
+            y = int(position.y())
+            wheel_parameter = (delta & 0xFFFF) << 16
+            screen_position = (x & 0xFFFF) | ((y & 0xFFFF) << 16)
+            try:
+                win32gui.PostMessage(
+                    self._owner_hwnd,
+                    win32con.WM_MOUSEWHEEL,
+                    wheel_parameter,
+                    screen_position,
+                )
+            except win32gui.error:
+                pass
         event.accept()
 
     def hide_overlay(self) -> None:
