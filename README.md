@@ -1,50 +1,75 @@
 # YouTube Endless Scroll Blocker
 
-A Windows tray application that blocks distracting YouTube feeds, watch-page recommendations, and comments in a maximized Brave window.
+A small Windows tray app that places click-blocking overlays over YouTube's most distracting areas in Brave. It blocks home and discovery feeds, watch-page recommendations, and comments after you scroll past the video, while leaving search, playlists, and channel pages available.
 
-## Behavior
+> [!IMPORTANT]
+> The overlay positions are currently designed for a maximized Brave window on a 1920 x 1080 display. Other resolutions, browser layouts, display scaling settings, and browsers are not yet supported.
 
-- Starts enabled and remains in the Windows system tray.
-- Shows a click-blocking black rectangle at `(260, 171)` with size `1631 x 852`, relative to the tracked Brave monitor.
-- Shows a separate click-blocking rectangle at `(1360, 170)` with size `536 x 860` beside a non-fullscreen regular YouTube video.
-- When accumulated mouse-wheel, scrollbar-drag, or document scrolling moves the main player fully out of view, blocks the comments region from `(0, 170)` to `(1360, 1080)`, joining the existing recommendations blocker on the right; this additional blocker remains hidden before that threshold.
-- Forwards wheel input through the black overlay so scrolling upward restores the player and removes the comments blocker.
-- Keeps the overlay attached to the most recently focused maximized Brave window when focus moves to another application.
-- Keeps other applications above the overlay by placing it directly above Brave instead of making it globally always-on-top.
-- Switches tracking immediately when a different Brave window receives focus, and hides the overlay if the tracked window closes, is hidden, minimized, restored, or cannot be inspected safely.
-- Hides the regular-video suggestions overlay when YouTube or Brave is fullscreen.
-- Shows the overlay on non-video `youtube.com` pages.
-- Hides the full-page overlay on search-result pages with a non-empty query so matching videos remain accessible.
-- Hides the overlay on video routes such as `/watch`, `/shorts`, `/live`, `/embed`, `/v`, and `/clip`.
-- Hides the overlay on handle and channel pages so their search and navigation controls remain usable.
-- Hides the overlay on every destination in YouTube's **You** section, including History, Playlists, Watch later, Liked videos, Your videos, Downloads, and Courses.
-- Hides the overlay throughout YouTube Studio's per-video content tools, including Details, Analytics, Editor, Comments, Subtitles, Claims, and Clips.
-- Provides independent, checkable `Block recommendations` and `Block comments` tray actions. Recommendations controls both non-video feeds and the watch-page sidebar; Comments controls only the scroll-triggered comments overlay.
-- Provides a session-only master `Turn Off` / `Turn On` action that hides or restores all enabled blockers without changing their individual choices.
-- Saves the two individual blocker choices per user in `%LOCALAPPDATA%\YouTube Endless Scroll Blocker\settings.json`; both default to enabled.
-- Provides an `Exit` tray-menu action.
-- Silently exits a second launch while one instance is already running.
+## What it blocks
 
-## Development
+| Page or state | Result |
+| --- | --- |
+| YouTube home and other non-video feeds | The main recommendations area is covered and cannot be clicked. |
+| A regular watch page | The recommendations sidebar is covered. |
+| A watch page after the player is scrolled out of view | The comments area is covered as well. Scrolling up reveals the player again and removes the comments overlay. |
+| Search results, channel pages, playlists, and the **You** section | No overlay, so navigation and intentional viewing remain available. |
+| YouTube Studio video tools | No overlay. |
+| Fullscreen video, minimized Brave, or a non-maximized Brave window | No overlay. |
 
-Python 3.10 and Windows are required.
+The app follows the most recently focused maximized Brave window. Its overlays stay attached to that window, so other applications can still appear above them normally.
+
+## Requirements
+
+- Windows
+- [Brave](https://brave.com/) browser
+- A 1920 x 1080 display with Brave maximized
+- Python 3.10 when running from source
+
+## Run from source
+
+Clone the repository, open PowerShell in the project directory, and run:
 
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-python -m pip install -r requirements-dev.txt
+python -m pip install -r requirements.txt
 python main.py
 ```
 
-Run the automated tests:
+The app starts enabled and appears in the Windows system tray. Only one instance can run at a time.
+
+## Tray controls
+
+- **Turn Off / Turn On** temporarily disables or enables every blocker for the current session.
+- **Block recommendations** controls both non-video feeds and the watch-page sidebar.
+- **Block comments** controls the comments overlay that appears after the video player has been scrolled out of view.
+- **Exit** closes the app.
+
+The recommendation and comment choices are saved in:
+
+```text
+%LOCALAPPDATA%\YouTube Endless Scroll Blocker\settings.json
+```
+
+The master Turn Off / Turn On control is session-only and does not change those saved choices.
+
+## Development
+
+Install the development dependencies:
+
+```powershell
+python -m pip install -r requirements-dev.txt
+```
+
+Run the test suite:
 
 ```powershell
 pytest
 ```
 
-## Release build
+## Build the executable
 
-Regenerate the icon after editing the icon source script, then build the single-file, windowed executable:
+Regenerate the icon if `tools/generate_icon.py` has changed, then build with PyInstaller:
 
 ```powershell
 python tools/generate_icon.py
@@ -52,3 +77,7 @@ pyinstaller --clean --noconfirm YouTubeEndlessScrollBlocker.spec
 ```
 
 The executable is written to `dist\YouTubeEndlessScrollBlocker.exe`.
+
+## How it works
+
+The app reads the active Brave address bar through Windows UI Automation and creates native black overlay windows in the relevant screen regions. It does not inject code into YouTube or install a browser extension. Mouse-wheel input is forwarded to Brave so you can still scroll back to an allowed part of the page.
