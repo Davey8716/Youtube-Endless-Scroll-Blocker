@@ -15,6 +15,7 @@ from .controller import OverlayController
 from .mutex import SingleInstanceMutex
 from .overlay import BlackOverlay
 from .scroll_detection import MouseWheelMonitor, WatchScrollTracker
+from .settings import BlockerSettings, SettingsStore
 
 
 APP_NAME = "YouTube Endless Scroll Blocker"
@@ -46,27 +47,28 @@ class DetectionThread(QThread):
 
 
 class TrayRuntime:
-    def __init__(self, app: QApplication) -> None:
+    def __init__(self, app: QApplication, settings_store: SettingsStore | None = None) -> None:
         self._app = app
         self._shutting_down = False
+        self._settings_store = settings_store or SettingsStore()
+        settings = self._settings_store.load()
         self._overlay = BlackOverlay()
         self._comments_overlay = BlackOverlay()
-        self._controller = OverlayController(self._overlay, self._comments_overlay)
+        self._controller = OverlayController(
+            self._overlay,
+            self._comments_overlay,
+            recommendations_enabled=settings.recommendations_enabled,
+            comments_enabled=settings.comments_enabled,
+        )
         self._latest_result = DetectionResult()
 
         icon = QIcon(str(resource_path("assets/app.ico")))
         self._tray = QSystemTrayIcon(icon, app)
         self._tray.setToolTip(APP_NAME)
         self._menu = QMenu()
-        self._toggle_action = QAction("Turn Off", self._menu)
-        self._exit_action = QAction("Exit", self._menu)
-        self._menu.addAction(self._toggle_action)
-        self._menu.addSeparator()
-        self._menu.addAction(self._exit_action)
+        self._build_menu()
         self._tray.setContextMenu(self._menu)
 
-        self._toggle_action.triggered.connect(self._toggle)
-        self._exit_action.triggered.connect(self.shutdown)
         self._menu.aboutToShow.connect(self._menu_opened)
         self._menu.aboutToHide.connect(self._menu_closed)
 
@@ -79,11 +81,50 @@ class TrayRuntime:
         self._detector_thread.start()
         self._tray.show()
 
+    def _build_menu(self) -> None:
+        self._toggle_action = QAction("Turn Off", self._menu)
+        self._recommendations_action = QAction("Block recommendations", self._menu)
+        self._recommendations_action.setCheckable(True)
+        self._recommendations_action.setChecked(self._controller.recommendations_enabled)
+        self._comments_action = QAction("Block comments", self._menu)
+        self._comments_action.setCheckable(True)
+        self._comments_action.setChecked(self._controller.comments_enabled)
+        self._exit_action = QAction("Exit", self._menu)
+        self._menu.addAction(self._toggle_action)
+        self._menu.addSeparator()
+        self._menu.addAction(self._recommendations_action)
+        self._menu.addAction(self._comments_action)
+        self._menu.addSeparator()
+        self._menu.addAction(self._exit_action)
+
+        self._toggle_action.triggered.connect(self._toggle)
+        self._recommendations_action.toggled.connect(self._toggle_recommendations)
+        self._comments_action.toggled.connect(self._toggle_comments)
+        self._exit_action.triggered.connect(self.shutdown)
+
     def _toggle(self) -> None:
         self._controller.set_enabled(not self._controller.enabled)
         self._toggle_action.setText("Turn Off" if self._controller.enabled else "Turn On")
         if self._controller.enabled:
             self._controller.handle_detection(self._latest_result)
+
+    def _toggle_recommendations(self, enabled: bool) -> None:
+        self._controller.set_recommendations_enabled(enabled)
+        self._save_blocker_settings()
+        self._controller.handle_detection(self._latest_result)
+
+    def _toggle_comments(self, enabled: bool) -> None:
+        self._controller.set_comments_enabled(enabled)
+        self._save_blocker_settings()
+        self._controller.handle_detection(self._latest_result)
+
+    def _save_blocker_settings(self) -> None:
+        self._settings_store.save(
+            BlockerSettings(
+                recommendations_enabled=self._controller.recommendations_enabled,
+                comments_enabled=self._controller.comments_enabled,
+            )
+        )
 
     def _menu_opened(self) -> None:
         self._controller.set_menu_open(True)

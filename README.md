@@ -1,6 +1,6 @@
 # YouTube Endless Scroll Blocker
 
-A Windows tray application that covers non-video YouTube pages in a maximized Brave window. Video playback pages remain unobstructed.
+A Windows tray application that blocks distracting YouTube feeds, watch-page recommendations, and comments in a maximized Brave window.
 
 ## Behavior
 
@@ -19,7 +19,10 @@ A Windows tray application that covers non-video YouTube pages in a maximized Br
 - Hides the overlay on handle and channel pages so their search and navigation controls remain usable.
 - Hides the overlay on every destination in YouTube's **You** section, including History, Playlists, Watch later, Liked videos, Your videos, Downloads, and Courses.
 - Hides the overlay throughout YouTube Studio's per-video content tools, including Details, Analytics, Editor, Comments, Subtitles, Claims, and Clips.
-- Provides `Turn Off` / `Turn On` and `Exit` tray-menu actions.
+- Provides independent, checkable `Block recommendations` and `Block comments` tray actions. Recommendations controls both non-video feeds and the watch-page sidebar; Comments controls only the scroll-triggered comments overlay.
+- Provides a session-only master `Turn Off` / `Turn On` action that hides or restores all enabled blockers without changing their individual choices.
+- Saves the two individual blocker choices per user in `%LOCALAPPDATA%\YouTube Endless Scroll Blocker\settings.json`; both default to enabled.
+- Provides an `Exit` tray-menu action.
 - Silently exits a second launch while one instance is already running.
 
 ## Development

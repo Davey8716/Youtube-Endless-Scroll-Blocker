@@ -127,3 +127,109 @@ def test_detection_without_owner_hides_overlay() -> None:
     controller = OverlayController(overlay, comments_overlay)
     controller.handle_detection(DetectionResult(OverlayMode.STANDARD, (0, 0, 1920, 1080)))
     assert overlay.hide_count == 1
+
+
+def test_disabled_recommendations_allow_standard_pages() -> None:
+    overlay = FakeOverlay()
+    comments_overlay = FakeOverlay()
+    controller = OverlayController(
+        overlay,
+        comments_overlay,
+        recommendations_enabled=False,
+    )
+    controller.handle_detection(
+        DetectionResult(OverlayMode.STANDARD, (0, 0, 1920, 1080), browser_hwnd=101)
+    )
+    assert not overlay.shown_at
+    assert overlay.hide_count == 1
+    assert comments_overlay.hide_count == 1
+
+
+def test_comments_remain_independent_when_recommendations_are_disabled() -> None:
+    overlay = FakeOverlay()
+    comments_overlay = FakeOverlay()
+    controller = OverlayController(
+        overlay,
+        comments_overlay,
+        recommendations_enabled=False,
+        comments_enabled=True,
+    )
+    controller.handle_detection(
+        DetectionResult(
+            OverlayMode.WATCH,
+            (0, 0, 1920, 1080),
+            browser_hwnd=101,
+            player_visible=False,
+        )
+    )
+    assert not overlay.shown_at
+    assert comments_overlay.shown_at == [(Rect(0, 170, 1360, 910), 101)]
+
+
+def test_recommendations_remain_independent_when_comments_are_disabled() -> None:
+    overlay = FakeOverlay()
+    comments_overlay = FakeOverlay()
+    controller = OverlayController(
+        overlay,
+        comments_overlay,
+        recommendations_enabled=True,
+        comments_enabled=False,
+    )
+    controller.handle_detection(
+        DetectionResult(
+            OverlayMode.WATCH,
+            (0, 0, 1920, 1080),
+            browser_hwnd=101,
+            player_visible=False,
+        )
+    )
+    assert overlay.shown_at == [(Rect(1360, 170, 536, 860), 101)]
+    assert not comments_overlay.shown_at
+
+
+def test_both_individual_blockers_can_be_disabled() -> None:
+    overlay = FakeOverlay()
+    comments_overlay = FakeOverlay()
+    controller = OverlayController(
+        overlay,
+        comments_overlay,
+        recommendations_enabled=False,
+        comments_enabled=False,
+    )
+    controller.handle_detection(
+        DetectionResult(
+            OverlayMode.WATCH,
+            (0, 0, 1920, 1080),
+            browser_hwnd=101,
+            player_visible=False,
+        )
+    )
+    assert not overlay.shown_at
+    assert not comments_overlay.shown_at
+
+
+def test_master_toggle_preserves_individual_preferences() -> None:
+    overlay = FakeOverlay()
+    comments_overlay = FakeOverlay()
+    controller = OverlayController(
+        overlay,
+        comments_overlay,
+        recommendations_enabled=False,
+        comments_enabled=True,
+    )
+    result = DetectionResult(
+        OverlayMode.WATCH,
+        (0, 0, 1920, 1080),
+        browser_hwnd=101,
+        player_visible=False,
+    )
+
+    controller.set_enabled(False)
+    controller.handle_detection(result)
+    controller.set_enabled(True)
+    controller.handle_detection(result)
+
+    assert controller.recommendations_enabled is False
+    assert controller.comments_enabled is True
+    assert not overlay.shown_at
+    assert comments_overlay.shown_at == [(Rect(0, 170, 1360, 910), 101)]
