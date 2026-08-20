@@ -24,18 +24,57 @@ def test_settings_round_trip_uses_atomic_replace(tmp_path: Path, monkeypatch) ->
         real_replace(source, destination)
 
     monkeypatch.setattr(os, "replace", tracked_replace)
-    settings = BlockerSettings(recommendations_enabled=False, comments_enabled=True)
+    settings = BlockerSettings(
+        feed_recommendations_enabled=False,
+        watch_recommendations_enabled=True,
+        comments_enabled=False,
+    )
 
     assert store.save(settings)
     assert store.load() == settings
     assert replacements == [(path.with_suffix(".json.tmp"), path)]
+    assert "recommendations_enabled" not in json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_partial_settings_use_defaults_for_missing_values(tmp_path: Path) -> None:
     path = tmp_path / "settings.json"
+    path.write_text(json.dumps({"feed_recommendations_enabled": False}), encoding="utf-8")
+    assert SettingsStore(path).load() == BlockerSettings(
+        feed_recommendations_enabled=False,
+        watch_recommendations_enabled=True,
+        comments_enabled=True,
+    )
+
+
+def test_legacy_recommendations_setting_initializes_both_controls(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+
     path.write_text(json.dumps({"recommendations_enabled": False}), encoding="utf-8")
     assert SettingsStore(path).load() == BlockerSettings(
-        recommendations_enabled=False,
+        feed_recommendations_enabled=False,
+        watch_recommendations_enabled=False,
+        comments_enabled=True,
+    )
+
+    path.write_text(json.dumps({"recommendations_enabled": True}), encoding="utf-8")
+    assert SettingsStore(path).load() == BlockerSettings()
+
+
+def test_new_settings_override_legacy_value_independently(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text(
+        json.dumps(
+            {
+                "recommendations_enabled": False,
+                "feed_recommendations_enabled": True,
+                "watch_recommendations_enabled": "invalid",
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert SettingsStore(path).load() == BlockerSettings(
+        feed_recommendations_enabled=True,
+        watch_recommendations_enabled=False,
         comments_enabled=True,
     )
 
@@ -47,7 +86,14 @@ def test_malformed_or_wrongly_typed_settings_use_defaults(tmp_path: Path) -> Non
 
     wrong_types = tmp_path / "wrong-types.json"
     wrong_types.write_text(
-        json.dumps({"recommendations_enabled": "no", "comments_enabled": 0}),
+        json.dumps(
+            {
+                "recommendations_enabled": "no",
+                "feed_recommendations_enabled": "no",
+                "watch_recommendations_enabled": 0,
+                "comments_enabled": 0,
+            }
+        ),
         encoding="utf-8",
     )
     assert SettingsStore(wrong_types).load() == BlockerSettings()

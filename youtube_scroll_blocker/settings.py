@@ -13,8 +13,21 @@ SETTINGS_FILE_NAME = "settings.json"
 
 @dataclass(frozen=True)
 class BlockerSettings:
-    recommendations_enabled: bool = True
+    feed_recommendations_enabled: bool = True
+    watch_recommendations_enabled: bool = True
     comments_enabled: bool = True
+
+
+def _boolean_setting(
+    payload: Mapping[str, object],
+    key: str,
+    default: bool,
+    fallback: bool | None = None,
+) -> bool:
+    value = payload.get(key)
+    if isinstance(value, bool):
+        return value
+    return fallback if fallback is not None else default
 
 
 def default_settings_path(
@@ -40,15 +53,26 @@ class SettingsStore:
             return BlockerSettings()
 
         defaults = BlockerSettings()
-        recommendations = payload.get("recommendations_enabled")
-        comments = payload.get("comments_enabled")
+        legacy_recommendations = payload.get("recommendations_enabled")
+        legacy_value = legacy_recommendations if isinstance(legacy_recommendations, bool) else None
         return BlockerSettings(
-            recommendations_enabled=(
-                recommendations
-                if isinstance(recommendations, bool)
-                else defaults.recommendations_enabled
+            feed_recommendations_enabled=_boolean_setting(
+                payload,
+                "feed_recommendations_enabled",
+                defaults.feed_recommendations_enabled,
+                legacy_value,
             ),
-            comments_enabled=comments if isinstance(comments, bool) else defaults.comments_enabled,
+            watch_recommendations_enabled=_boolean_setting(
+                payload,
+                "watch_recommendations_enabled",
+                defaults.watch_recommendations_enabled,
+                legacy_value,
+            ),
+            comments_enabled=_boolean_setting(
+                payload,
+                "comments_enabled",
+                defaults.comments_enabled,
+            ),
         )
 
     def save(self, settings: BlockerSettings) -> bool:

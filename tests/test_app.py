@@ -48,36 +48,63 @@ def test_tray_actions_reflect_and_update_individual_blockers() -> None:
 
     try:
         runtime._build_menu()
-        assert runtime._recommendations_action.isCheckable()
+        assert runtime._feed_recommendations_action.isCheckable()
+        assert runtime._watch_recommendations_action.isCheckable()
         assert runtime._comments_action.isCheckable()
-        assert runtime._recommendations_action.isChecked()
+        assert runtime._feed_recommendations_action.isChecked()
+        assert runtime._watch_recommendations_action.isChecked()
         assert runtime._comments_action.isChecked()
+        assert runtime._feed_recommendations_action.text() == "Block home and discovery feeds"
+        assert runtime._watch_recommendations_action.text() == "Block watch-page suggestions"
 
-        runtime._recommendations_action.setChecked(False)
-        assert runtime._controller.recommendations_enabled is False
+        runtime._toggle_action.trigger()
+        assert runtime._controller.enabled is False
+        assert runtime._feed_recommendations_action.isChecked()
+        assert runtime._watch_recommendations_action.isChecked()
+        assert runtime._comments_action.isChecked()
+        runtime._toggle_action.trigger()
+        assert runtime._controller.enabled is True
+        overlay.shown_at.clear()
+        comments_overlay.shown_at.clear()
+
+        runtime._feed_recommendations_action.setChecked(False)
+        assert runtime._controller.feed_recommendations_enabled is False
+        assert runtime._controller.watch_recommendations_enabled is True
         assert comments_overlay.shown_at == [(Rect(10, 170, 1360, 910), 101)]
         assert runtime._settings_store.saved[-1] == BlockerSettings(
-            recommendations_enabled=False,
+            feed_recommendations_enabled=False,
+            watch_recommendations_enabled=True,
+            comments_enabled=True,
+        )
+
+        runtime._watch_recommendations_action.setChecked(False)
+        assert runtime._controller.watch_recommendations_enabled is False
+        assert runtime._settings_store.saved[-1] == BlockerSettings(
+            feed_recommendations_enabled=False,
+            watch_recommendations_enabled=False,
             comments_enabled=True,
         )
 
         runtime._comments_action.setChecked(False)
         assert runtime._controller.comments_enabled is False
         assert runtime._settings_store.saved[-1] == BlockerSettings(
-            recommendations_enabled=False,
+            feed_recommendations_enabled=False,
+            watch_recommendations_enabled=False,
             comments_enabled=False,
         )
 
         runtime._toggle_action.trigger()
         assert runtime._controller.enabled is False
         assert runtime._toggle_action.text() == "Turn On"
-        assert not runtime._recommendations_action.isChecked()
+        assert not runtime._feed_recommendations_action.isChecked()
+        assert not runtime._watch_recommendations_action.isChecked()
         assert not runtime._comments_action.isChecked()
 
         runtime._toggle_action.trigger()
         assert runtime._controller.enabled is True
         assert runtime._toggle_action.text() == "Turn Off"
-        assert runtime._controller.recommendations_enabled is False
+        assert runtime._controller.feed_recommendations_enabled is False
+        assert runtime._controller.watch_recommendations_enabled is False
         assert runtime._controller.comments_enabled is False
     finally:
         runtime._menu.close()

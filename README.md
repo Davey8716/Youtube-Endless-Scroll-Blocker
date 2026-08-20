@@ -42,7 +42,8 @@ The app starts enabled and appears in the Windows system tray. Only one instance
 ## Tray controls
 
 - **Turn Off / Turn On** temporarily disables or enables every blocker for the current session.
-- **Block recommendations** controls both non-video feeds and the watch-page sidebar.
+- **Block home and discovery feeds** controls YouTube's non-video recommendation feeds.
+- **Block watch-page suggestions** controls the recommendations sidebar beside a video.
 - **Block comments** controls the comments overlay that appears after the video player has been scrolled out of view.
 - **Exit** closes the app.
 

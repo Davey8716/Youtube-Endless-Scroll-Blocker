@@ -24,13 +24,15 @@ class OverlayController:
         overlay: OverlayView,
         comments_overlay: OverlayView,
         *,
-        recommendations_enabled: bool = True,
+        feed_recommendations_enabled: bool = True,
+        watch_recommendations_enabled: bool = True,
         comments_enabled: bool = True,
     ) -> None:
         self._overlay = overlay
         self._comments_overlay = comments_overlay
         self.enabled = True
-        self.recommendations_enabled = recommendations_enabled
+        self.feed_recommendations_enabled = feed_recommendations_enabled
+        self.watch_recommendations_enabled = watch_recommendations_enabled
         self.comments_enabled = comments_enabled
         self.menu_open = False
 
@@ -44,8 +46,13 @@ class OverlayController:
         if open_:
             self.hide()
 
-    def set_recommendations_enabled(self, enabled: bool) -> None:
-        self.recommendations_enabled = enabled
+    def set_feed_recommendations_enabled(self, enabled: bool) -> None:
+        self.feed_recommendations_enabled = enabled
+        if not enabled:
+            self._overlay.hide_overlay()
+
+    def set_watch_recommendations_enabled(self, enabled: bool) -> None:
+        self.watch_recommendations_enabled = enabled
         if not enabled:
             self._overlay.hide_overlay()
 
@@ -65,7 +72,7 @@ class OverlayController:
             self.hide()
             return
         if result.mode is OverlayMode.WATCH:
-            if self.recommendations_enabled and result.theatre_mode is not True:
+            if self.watch_recommendations_enabled and result.theatre_mode is not True:
                 rect = watch_overlay_rect_for_monitor(result.monitor_rect)
                 self._overlay.show_at(rect, result.browser_hwnd)
             else:
@@ -77,7 +84,7 @@ class OverlayController:
                 self._comments_overlay.hide_overlay()
         else:
             self._comments_overlay.hide_overlay()
-            if self.recommendations_enabled:
+            if self.feed_recommendations_enabled:
                 rect = overlay_rect_for_monitor(result.monitor_rect)
                 self._overlay.show_at(rect, result.browser_hwnd)
             else:

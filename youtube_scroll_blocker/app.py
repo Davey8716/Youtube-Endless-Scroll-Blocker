@@ -57,7 +57,8 @@ class TrayRuntime:
         self._controller = OverlayController(
             self._overlay,
             self._comments_overlay,
-            recommendations_enabled=settings.recommendations_enabled,
+            feed_recommendations_enabled=settings.feed_recommendations_enabled,
+            watch_recommendations_enabled=settings.watch_recommendations_enabled,
             comments_enabled=settings.comments_enabled,
         )
         self._latest_result = DetectionResult()
@@ -83,22 +84,31 @@ class TrayRuntime:
 
     def _build_menu(self) -> None:
         self._toggle_action = QAction("Turn Off", self._menu)
-        self._recommendations_action = QAction("Block recommendations", self._menu)
-        self._recommendations_action.setCheckable(True)
-        self._recommendations_action.setChecked(self._controller.recommendations_enabled)
+        self._feed_recommendations_action = QAction("Block home and discovery feeds", self._menu)
+        self._feed_recommendations_action.setCheckable(True)
+        self._feed_recommendations_action.setChecked(
+            self._controller.feed_recommendations_enabled
+        )
+        self._watch_recommendations_action = QAction("Block watch-page suggestions", self._menu)
+        self._watch_recommendations_action.setCheckable(True)
+        self._watch_recommendations_action.setChecked(
+            self._controller.watch_recommendations_enabled
+        )
         self._comments_action = QAction("Block comments", self._menu)
         self._comments_action.setCheckable(True)
         self._comments_action.setChecked(self._controller.comments_enabled)
         self._exit_action = QAction("Exit", self._menu)
         self._menu.addAction(self._toggle_action)
         self._menu.addSeparator()
-        self._menu.addAction(self._recommendations_action)
+        self._menu.addAction(self._feed_recommendations_action)
+        self._menu.addAction(self._watch_recommendations_action)
         self._menu.addAction(self._comments_action)
         self._menu.addSeparator()
         self._menu.addAction(self._exit_action)
 
         self._toggle_action.triggered.connect(self._toggle)
-        self._recommendations_action.toggled.connect(self._toggle_recommendations)
+        self._feed_recommendations_action.toggled.connect(self._toggle_feed_recommendations)
+        self._watch_recommendations_action.toggled.connect(self._toggle_watch_recommendations)
         self._comments_action.toggled.connect(self._toggle_comments)
         self._exit_action.triggered.connect(self.shutdown)
 
@@ -108,8 +118,13 @@ class TrayRuntime:
         if self._controller.enabled:
             self._controller.handle_detection(self._latest_result)
 
-    def _toggle_recommendations(self, enabled: bool) -> None:
-        self._controller.set_recommendations_enabled(enabled)
+    def _toggle_feed_recommendations(self, enabled: bool) -> None:
+        self._controller.set_feed_recommendations_enabled(enabled)
+        self._save_blocker_settings()
+        self._controller.handle_detection(self._latest_result)
+
+    def _toggle_watch_recommendations(self, enabled: bool) -> None:
+        self._controller.set_watch_recommendations_enabled(enabled)
         self._save_blocker_settings()
         self._controller.handle_detection(self._latest_result)
 
@@ -121,7 +136,8 @@ class TrayRuntime:
     def _save_blocker_settings(self) -> None:
         self._settings_store.save(
             BlockerSettings(
-                recommendations_enabled=self._controller.recommendations_enabled,
+                feed_recommendations_enabled=self._controller.feed_recommendations_enabled,
+                watch_recommendations_enabled=self._controller.watch_recommendations_enabled,
                 comments_enabled=self._controller.comments_enabled,
             )
         )
