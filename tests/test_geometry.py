@@ -30,9 +30,32 @@ def test_negative_monitor_watch_geometry() -> None:
     assert watch_overlay_rect_for_monitor((-1920, -200, 0, 880)) == Rect(-560, -30, 536, 858)
 
 
+def test_portrait_watch_geometry() -> None:
+    assert watch_overlay_rect_for_monitor((0, 0, 1080, 1920)) == Rect(719, 177, 362, 1694)
+
+
+def test_portrait_watch_geometry_is_relative_to_monitor_origin() -> None:
+    assert watch_overlay_rect_for_monitor((3840, 0, 4920, 1920)) == Rect(
+        4559,
+        177,
+        362,
+        1694,
+    )
+
+
+def test_unsupported_portrait_size_has_no_watch_geometry() -> None:
+    assert watch_overlay_rect_for_monitor((0, 0, 1200, 1920)) is None
+
+
 def test_primary_monitor_comments_geometry() -> None:
     assert comments_overlay_rect_for_monitor((0, 0, 1920, 1080)) == Rect(10, 170, 1360, 910)
 
 
 def test_comments_geometry_is_relative_to_secondary_monitor() -> None:
     assert comments_overlay_rect_for_monitor((1920, 0, 3840, 1080)) == Rect(1930, 170, 1360, 910)
+
+
+def test_portrait_feed_and_comments_geometry_are_not_supported() -> None:
+    monitor = (3840, 0, 4920, 1920)
+    assert overlay_rect_for_monitor(monitor) is None
+    assert comments_overlay_rect_for_monitor(monitor) is None

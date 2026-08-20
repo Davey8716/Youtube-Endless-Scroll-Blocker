@@ -236,6 +236,37 @@ def test_fullscreen_watch_page_is_not_eligible(monkeypatch) -> None:
     assert result.mode is OverlayMode.NONE
 
 
+def test_portrait_watch_returns_after_leaving_fullscreen(monkeypatch) -> None:
+    configure_active_brave(monkeypatch)
+    fullscreen = {"active": True}
+    monkeypatch.setattr(
+        browser_detection,
+        "_is_fullscreen_window",
+        lambda _hwnd, _monitor_rect, _chrome_visible: fullscreen["active"],
+    )
+    monkeypatch.setattr(
+        browser_detection.win32api,
+        "GetMonitorInfo",
+        lambda _monitor: {"Monitor": (3840, 0, 4920, 1920)},
+    )
+    reader = StubAddressReader(
+        "https://www.youtube.com/watch?v=test-id",
+        visible=False,
+        theatre_mode=False,
+    )
+    detector = BrowserDetector(reader, StubPlayerTracker(True))
+
+    assert detector.detect_all() == ()
+
+    fullscreen["active"] = False
+    reader.visible = True
+    results = detector.detect_all()
+    assert len(results) == 1
+    assert results[0].mode is OverlayMode.WATCH
+    assert results[0].monitor_rect == (3840, 0, 4920, 1920)
+    assert results[0].theatre_mode is False
+
+
 def test_hidden_browser_chrome_fails_closed(monkeypatch) -> None:
     configure_active_brave(monkeypatch)
     result = BrowserDetector(StubAddressReader("https://www.youtube.com/watch?v=test-id", visible=False)).detect()

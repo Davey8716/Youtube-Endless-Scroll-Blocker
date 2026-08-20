@@ -11,6 +11,11 @@ WATCH_OVERLAY_X = 1360
 WATCH_OVERLAY_Y = 170
 WATCH_OVERLAY_WIDTH = 536
 WATCH_OVERLAY_HEIGHT = 858
+PORTRAIT_WATCH_OVERLAY_X = 722
+PORTRAIT_WATCH_OVERLAY_Y = 177
+PORTRAIT_WATCH_OVERLAY_WIDTH = 336
+PORTRAIT_WATCH_OVERLAY_HEIGHT = 1694
+SUPPORTED_PORTRAIT_SIZE = (1080, 1920)
 COMMENTS_OVERLAY_X = 10
 COMMENTS_OVERLAY_Y = 170
 COMMENTS_OVERLAY_WIDTH = 1360
@@ -24,7 +29,14 @@ class Rect:
     height: int
 
 
-def overlay_rect_for_monitor(monitor_rect: tuple[int, int, int, int]) -> Rect:
+def is_portrait_monitor(monitor_rect: tuple[int, int, int, int]) -> bool:
+    left, top, right, bottom = monitor_rect
+    return bottom - top > right - left
+
+
+def overlay_rect_for_monitor(monitor_rect: tuple[int, int, int, int]) -> Rect | None:
+    if is_portrait_monitor(monitor_rect):
+        return None
     left, top, _right, _bottom = monitor_rect
     return Rect(
         left=left + OVERLAY_X,
@@ -34,8 +46,19 @@ def overlay_rect_for_monitor(monitor_rect: tuple[int, int, int, int]) -> Rect:
     )
 
 
-def watch_overlay_rect_for_monitor(monitor_rect: tuple[int, int, int, int]) -> Rect:
-    left, top, _right, _bottom = monitor_rect
+def watch_overlay_rect_for_monitor(monitor_rect: tuple[int, int, int, int]) -> Rect | None:
+    left, top, right, bottom = monitor_rect
+    width = right - left
+    height = bottom - top
+    if height > width:
+        if (width, height) != SUPPORTED_PORTRAIT_SIZE:
+            return None
+        return Rect(
+            left=left + PORTRAIT_WATCH_OVERLAY_X,
+            top=top + PORTRAIT_WATCH_OVERLAY_Y,
+            width=PORTRAIT_WATCH_OVERLAY_WIDTH,
+            height=PORTRAIT_WATCH_OVERLAY_HEIGHT,
+        )
     return Rect(
         left=left + WATCH_OVERLAY_X,
         top=top + WATCH_OVERLAY_Y,
@@ -46,7 +69,9 @@ def watch_overlay_rect_for_monitor(monitor_rect: tuple[int, int, int, int]) -> R
 
 def comments_overlay_rect_for_monitor(
     monitor_rect: tuple[int, int, int, int],
-) -> Rect:
+) -> Rect | None:
+    if is_portrait_monitor(monitor_rect):
+        return None
     left, top, right, bottom = monitor_rect
     return Rect(
         left=left + COMMENTS_OVERLAY_X,

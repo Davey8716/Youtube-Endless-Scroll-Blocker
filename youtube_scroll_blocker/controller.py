@@ -8,6 +8,7 @@ from .browser_detection import DetectionResult
 from .geometry import (
     Rect,
     comments_overlay_rect_for_monitor,
+    is_portrait_monitor,
     overlay_rect_for_monitor,
     watch_overlay_rect_for_monitor,
 )
@@ -98,21 +99,31 @@ class OverlayController:
         assert result.monitor_rect is not None
         assert result.browser_hwnd is not None
         if result.mode is OverlayMode.WATCH:
-            if self.watch_recommendations_enabled and result.theatre_mode is not True:
-                rect = watch_overlay_rect_for_monitor(result.monitor_rect)
+            portrait = is_portrait_monitor(result.monitor_rect)
+            regular_mode = (
+                result.theatre_mode is False if portrait else result.theatre_mode is not True
+            )
+            rect = watch_overlay_rect_for_monitor(result.monitor_rect)
+            if self.watch_recommendations_enabled and regular_mode and rect is not None:
                 pair.recommendations.show_at(rect, result.browser_hwnd)
             else:
                 pair.recommendations.hide_overlay()
             if self.comments_enabled and result.player_visible is False:
                 comments_rect = comments_overlay_rect_for_monitor(result.monitor_rect)
-                pair.comments.show_at(comments_rect, result.browser_hwnd)
+                if comments_rect is not None:
+                    pair.comments.show_at(comments_rect, result.browser_hwnd)
+                else:
+                    pair.comments.hide_overlay()
             else:
                 pair.comments.hide_overlay()
         else:
             pair.comments.hide_overlay()
             if self.feed_recommendations_enabled:
                 rect = overlay_rect_for_monitor(result.monitor_rect)
-                pair.recommendations.show_at(rect, result.browser_hwnd)
+                if rect is not None:
+                    pair.recommendations.show_at(rect, result.browser_hwnd)
+                else:
+                    pair.recommendations.hide_overlay()
             else:
                 pair.recommendations.hide_overlay()
 
