@@ -24,11 +24,20 @@ DEFAULT_SCROLL_LINES = 3
 SCROLLBAR_ZONE_WIDTH = 24
 SCROLLBAR_DRAG_SCALE = 40.0
 
-PLAYER_BOTTOM = 761
+LANDSCAPE_PLAYER_BOTTOM = 761
+# The 717 px-wide portrait player starts at y=177 and is about 403 px tall (16:9).
+PORTRAIT_PLAYER_BOTTOM = 580
 FALLBACK_CONTENT_TOP = 110
 SCROLL_SAMPLE_X = 810
 SCROLL_SAMPLE_Y = 900
 MAX_ANCESTORS = 15
+
+
+def _player_bottom_for_monitor(monitor_rect: tuple[int, int, int, int]) -> int:
+    left, top, right, bottom = monitor_rect
+    if bottom - top > right - left:
+        return PORTRAIT_PLAYER_BOTTOM
+    return LANDSCAPE_PLAYER_BOTTOM
 
 
 @dataclass(frozen=True)
@@ -355,6 +364,6 @@ class WatchScrollTracker:
         else:
             return self._last_visibility
 
-        threshold = max(1, PLAYER_BOTTOM - content_top)
+        threshold = max(1, _player_bottom_for_monitor(monitor_rect) - content_top)
         self._last_visibility = scroll_offset < threshold
         return self._last_visibility

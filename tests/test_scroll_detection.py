@@ -13,6 +13,7 @@ from youtube_scroll_blocker.scroll_detection import (
 
 
 MONITOR = (0, 0, 1920, 1080)
+PORTRAIT_MONITOR = (0, 0, 1080, 1920)
 WATCH_URL = "https://www.youtube.com/watch?v=test-id"
 
 
@@ -118,6 +119,20 @@ def test_accumulated_wheel_events_hide_player_then_upward_scroll_restores_it() -
     assert tracker.visibility(101, MONITOR, WATCH_URL, active=True) is True
 
 
+def test_portrait_wheel_events_hide_player_after_four_notches_and_restore_it() -> None:
+    monitor = FakeMonitor()
+    tracker = make_tracker(monitor)
+
+    monitor.events.extend(WheelEvent(-120, 800, 500) for _ in range(3))
+    assert tracker.visibility(101, PORTRAIT_MONITOR, WATCH_URL, active=True) is True
+
+    monitor.events.append(WheelEvent(-120, 800, 500))
+    assert tracker.visibility(101, PORTRAIT_MONITOR, WATCH_URL, active=True) is False
+
+    monitor.events.extend(WheelEvent(120, 800, 500) for _ in range(4))
+    assert tracker.visibility(101, PORTRAIT_MONITOR, WATCH_URL, active=True) is True
+
+
 def test_high_resolution_wheel_deltas_accumulate() -> None:
     monitor = FakeMonitor()
     tracker = make_tracker(monitor)
@@ -193,6 +208,28 @@ def test_document_scroll_state_is_used_before_wheel_input_exists() -> None:
     tracker = make_tracker(monitor, document_reader)
 
     assert tracker.visibility(101, MONITOR, WATCH_URL, active=True) is False
+
+
+def test_landscape_document_scroll_state_keeps_existing_player_bottom_boundary() -> None:
+    monitor = FakeMonitor()
+    document_reader = FakeDocumentReader(DocumentScrollState(650.0, 110))
+    tracker = make_tracker(monitor, document_reader)
+
+    assert tracker.visibility(101, MONITOR, WATCH_URL, active=True) is True
+
+    document_reader.state = DocumentScrollState(651.0, 110)
+    assert tracker.visibility(101, MONITOR, WATCH_URL, active=True) is False
+
+
+def test_portrait_document_scroll_state_changes_at_player_bottom_boundary() -> None:
+    monitor = FakeMonitor()
+    document_reader = FakeDocumentReader(DocumentScrollState(469.0, 110))
+    tracker = make_tracker(monitor, document_reader)
+
+    assert tracker.visibility(101, PORTRAIT_MONITOR, WATCH_URL, active=True) is True
+
+    document_reader.state = DocumentScrollState(470.0, 110)
+    assert tracker.visibility(101, PORTRAIT_MONITOR, WATCH_URL, active=True) is False
 
 
 def test_background_window_retains_its_last_known_player_visibility() -> None:
