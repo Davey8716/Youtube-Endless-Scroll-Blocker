@@ -41,7 +41,9 @@ The app starts enabled and appears in the Windows system tray. Only one instance
 
 ## Tray controls
 
+- **Start with Windows** registers or removes the app for the current Windows user. It is off by default.
 - **Turn Off / Turn On** temporarily disables or enables every blocker for the current session.
+- **Pause** disables every blocker for 5, 15, or 30 minutes, then turns blocking back on automatically. While active, the tray entry shows the selected pause duration; selecting **Turn On** resumes blocking early.
 - **Block home and discovery feeds** controls YouTube's non-video recommendation feeds.
 - **Block watch-page suggestions** controls the recommendations sidebar beside a video.
 - **Block comments** controls the comments overlay that appears after the video player has been scrolled out of view.
@@ -53,7 +55,9 @@ The recommendation and comment choices are saved in:
 %LOCALAPPDATA%\YouTube Endless Scroll Blocker\settings.json
 ```
 
-The master Turn Off / Turn On control is session-only and does not change those saved choices.
+The **Start with Windows** preference is saved in the same file and uses the current user's standard Windows Run entry. Scheduled tasks created by the user are not changed.
+
+The master Turn Off / Turn On control and timed pauses are session-only and do not change those saved choices. Closing the app discards an active pause.
 
 ## Development
 
