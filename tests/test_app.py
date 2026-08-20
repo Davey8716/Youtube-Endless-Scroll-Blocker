@@ -3,7 +3,6 @@ from PySide6.QtWidgets import QApplication, QMenu
 
 from youtube_scroll_blocker.app import (
     PAUSE_DURATIONS_MINUTES,
-    TRAY_MENU_STYLESHEET,
     TrayRuntime,
     _pause_duration_label,
 )
@@ -11,6 +10,7 @@ from youtube_scroll_blocker.browser_detection import DetectionResult
 from youtube_scroll_blocker.controller import OverlayController
 from youtube_scroll_blocker.geometry import Rect
 from youtube_scroll_blocker.settings import BlockerSettings
+from youtube_scroll_blocker.styles import TRAY_MENU_STYLESHEET
 from youtube_scroll_blocker.url_rules import OverlayMode
 
 
@@ -81,6 +81,7 @@ def test_tray_actions_reflect_and_update_individual_blockers() -> None:
         assert runtime._start_with_windows_action.isCheckable()
         assert not runtime._start_with_windows_action.isChecked()
         assert runtime._menu.styleSheet() == TRAY_MENU_STYLESHEET
+        assert "QMenu::item:disabled" in runtime._menu.styleSheet()
         assert runtime._pause_menu.title() == "Pause"
         assert tuple(runtime._pause_actions) == PAUSE_DURATIONS_MINUTES
         assert [action.text() for action in runtime._pause_menu.actions()] == [

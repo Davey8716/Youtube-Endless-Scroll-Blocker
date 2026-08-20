@@ -17,44 +17,12 @@ from .overlay import BlackOverlay
 from .scroll_detection import MouseWheelMonitor, WatchScrollTracker
 from .settings import BlockerSettings, SettingsStore
 from .startup import StartupManager
+from .styles import TRAY_MENU_STYLESHEET
 
 
 APP_NAME = "YouTube Endless Scroll Blocker"
 POLL_INTERVAL_SECONDS = 0.25
 PAUSE_DURATIONS_MINUTES = (5, 15, 30,60,120)
-TRAY_MENU_STYLESHEET = """
-QMenu {
-    background-color: #0b1f3a;
-    color: #f4f7fb;
-    border: 1px solid #294867;
-    padding: 6px;
-}
-QMenu::item {
-    padding: 7px 28px 7px 26px;
-    border-radius: 4px;
-}
-QMenu::item:selected {
-    background-color: #1d4f7a;
-}
-QMenu::item:checked {
-    background-color: #163f66;
-}
-QMenu::indicator {
-    width: 12px;
-    height: 12px;
-    border: 1px solid #8aa4bf;
-    border-radius: 2px;
-}
-QMenu::indicator:checked {
-    background-color: #38bdf8;
-    border-color: #bae6fd;
-}
-QMenu::separator {
-    height: 1px;
-    background-color: #294867;
-    margin: 5px 8px;
-}
-"""
 
 
 def _pause_duration_label(minutes: int) -> str:
