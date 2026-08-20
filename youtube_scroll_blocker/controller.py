@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from typing import Protocol
 
 from .browser_detection import DetectionResult
@@ -18,78 +20,151 @@ class OverlayView(Protocol):
     def hide_overlay(self) -> None: ...
 
 
+@dataclass
+class _OverlayPair:
+    recommendations: OverlayView
+    comments: OverlayView
+
+
 class OverlayController:
     def __init__(
         self,
-        overlay: OverlayView,
-        comments_overlay: OverlayView,
+        overlay_or_factory: OverlayView | Callable[[], OverlayView],
+        comments_overlay: OverlayView | None = None,
         *,
         feed_recommendations_enabled: bool = True,
         watch_recommendations_enabled: bool = True,
         comments_enabled: bool = True,
     ) -> None:
-        self._overlay = overlay
-        self._comments_overlay = comments_overlay
+        self._overlay_factory: Callable[[], OverlayView] | None
+        self._unassigned_pair: _OverlayPair | None
+        if comments_overlay is None and callable(overlay_or_factory):
+            self._overlay_factory = overlay_or_factory
+            self._unassigned_pair = None
+        elif comments_overlay is not None:
+            self._overlay_factory = None
+            self._unassigned_pair = _OverlayPair(overlay_or_factory, comments_overlay)  # type: ignore[arg-type]
+        else:
+            raise TypeError("An overlay factory or two overlay views are required")
+        self._overlay_pairs: dict[int, _OverlayPair] = {}
         self.enabled = True
         self.feed_recommendations_enabled = feed_recommendations_enabled
         self.watch_recommendations_enabled = watch_recommendations_enabled
         self.comments_enabled = comments_enabled
-        self.menu_open = False
 
     def set_enabled(self, enabled: bool) -> None:
         self.enabled = enabled
         if not enabled:
             self.hide()
 
-    def set_menu_open(self, open_: bool) -> None:
-        self.menu_open = open_
-        if open_:
-            self.hide()
-
     def set_feed_recommendations_enabled(self, enabled: bool) -> None:
         self.feed_recommendations_enabled = enabled
         if not enabled:
-            self._overlay.hide_overlay()
+            self._hide_recommendations()
 
     def set_watch_recommendations_enabled(self, enabled: bool) -> None:
         self.watch_recommendations_enabled = enabled
         if not enabled:
-            self._overlay.hide_overlay()
+            self._hide_recommendations()
 
     def set_comments_enabled(self, enabled: bool) -> None:
         self.comments_enabled = enabled
         if not enabled:
-            self._comments_overlay.hide_overlay()
+            for pair in self._all_pairs():
+                pair.comments.hide_overlay()
 
     def handle_detection(self, result: DetectionResult) -> None:
-        if (
-            not self.enabled
-            or self.menu_open
-            or not result.should_show
-            or result.monitor_rect is None
-            or result.browser_hwnd is None
-        ):
+        self.handle_detections((result,))
+
+    def handle_detections(self, results: Iterable[DetectionResult]) -> None:
+        eligible = {
+            result.browser_hwnd: result
+            for result in results
+            if result.should_show
+            and result.monitor_rect is not None
+            and result.browser_hwnd is not None
+        }
+        self._remove_stale_pairs(set(eligible))
+        if not eligible:
             self.hide()
             return
+        if not self.enabled:
+            self.hide()
+            return
+        for hwnd, result in eligible.items():
+            self._render(self._pair_for(hwnd), result)
+
+    def _render(self, pair: _OverlayPair, result: DetectionResult) -> None:
+        assert result.monitor_rect is not None
+        assert result.browser_hwnd is not None
         if result.mode is OverlayMode.WATCH:
             if self.watch_recommendations_enabled and result.theatre_mode is not True:
                 rect = watch_overlay_rect_for_monitor(result.monitor_rect)
-                self._overlay.show_at(rect, result.browser_hwnd)
+                pair.recommendations.show_at(rect, result.browser_hwnd)
             else:
-                self._overlay.hide_overlay()
+                pair.recommendations.hide_overlay()
             if self.comments_enabled and result.player_visible is False:
                 comments_rect = comments_overlay_rect_for_monitor(result.monitor_rect)
-                self._comments_overlay.show_at(comments_rect, result.browser_hwnd)
+                pair.comments.show_at(comments_rect, result.browser_hwnd)
             else:
-                self._comments_overlay.hide_overlay()
+                pair.comments.hide_overlay()
         else:
-            self._comments_overlay.hide_overlay()
+            pair.comments.hide_overlay()
             if self.feed_recommendations_enabled:
                 rect = overlay_rect_for_monitor(result.monitor_rect)
-                self._overlay.show_at(rect, result.browser_hwnd)
+                pair.recommendations.show_at(rect, result.browser_hwnd)
             else:
-                self._overlay.hide_overlay()
+                pair.recommendations.hide_overlay()
+
+    def _pair_for(self, hwnd: int) -> _OverlayPair:
+        pair = self._overlay_pairs.get(hwnd)
+        if pair is not None:
+            return pair
+        if self._unassigned_pair is not None:
+            pair = self._unassigned_pair
+            self._unassigned_pair = None
+        elif self._overlay_factory is not None:
+            pair = _OverlayPair(self._overlay_factory(), self._overlay_factory())
+        else:
+            raise RuntimeError("No overlay factory is available for another browser window")
+        self._overlay_pairs[hwnd] = pair
+        return pair
+
+    def _all_pairs(self) -> tuple[_OverlayPair, ...]:
+        assigned = tuple(self._overlay_pairs.values())
+        if self._unassigned_pair is None:
+            return assigned
+        return (*assigned, self._unassigned_pair)
+
+    def _hide_recommendations(self) -> None:
+        for pair in self._all_pairs():
+            pair.recommendations.hide_overlay()
+
+    def _remove_stale_pairs(self, active_hwnds: set[int]) -> None:
+        for hwnd in tuple(self._overlay_pairs):
+            if hwnd in active_hwnds:
+                continue
+            pair = self._overlay_pairs.pop(hwnd)
+            self._dispose_pair(pair)
+
+    @staticmethod
+    def _dispose_view(view: OverlayView) -> None:
+        view.hide_overlay()
+        close = getattr(view, "close", None)
+        if callable(close):
+            close()
+
+    def _dispose_pair(self, pair: _OverlayPair) -> None:
+        self._dispose_view(pair.recommendations)
+        self._dispose_view(pair.comments)
 
     def hide(self) -> None:
-        self._overlay.hide_overlay()
-        self._comments_overlay.hide_overlay()
+        for pair in self._all_pairs():
+            pair.recommendations.hide_overlay()
+            pair.comments.hide_overlay()
+
+    def close(self) -> None:
+        for pair in self._all_pairs():
+            self._dispose_pair(pair)
+        self._overlay_pairs.clear()
+        self._unassigned_pair = None

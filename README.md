@@ -17,7 +17,7 @@ A small Windows tray app that places click-blocking overlays over YouTube's most
 | YouTube Studio video tools | No overlay. |
 | Fullscreen video, minimized Brave, or a non-maximized Brave window | No overlay. |
 
-The app follows the most recently focused maximized Brave window. Its overlays stay attached to that window, so other applications can still appear above them normally.
+The app follows every eligible maximized Brave window. Each overlay stays attached to its corresponding browser window, so focusing another Brave window does not remove blockers elsewhere and other applications can still appear above them normally.
 
 ## Requirements
 
@@ -58,6 +58,8 @@ The recommendation and comment choices are saved in:
 The **Start with Windows** preference is saved in the same file and uses the current user's standard Windows Run entry. Scheduled tasks created by the user are not changed.
 
 The master Turn Off / Turn On control and timed pauses are session-only and do not change those saved choices. Closing the app discards an active pause.
+
+All tray controls and saved blocker preferences apply globally to every Brave window and tab.
 
 ## Development
 

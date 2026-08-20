@@ -1,3 +1,4 @@
+from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication, QMenu
 
 from youtube_scroll_blocker.app import (
@@ -64,12 +65,12 @@ def test_tray_actions_reflect_and_update_individual_blockers() -> None:
     runtime._settings_store = FakeSettingsStore()
     runtime._startup_manager = FakeStartupManager()
     runtime._start_with_windows_enabled = False
-    runtime._latest_result = DetectionResult(
+    runtime._latest_results = (DetectionResult(
         OverlayMode.WATCH,
         (0, 0, 1920, 1080),
         browser_hwnd=101,
         player_visible=False,
-    )
+    ),)
     runtime._menu = QMenu()
     runtime._shutting_down = False
 
@@ -159,12 +160,12 @@ def test_pause_actions_disable_temporarily_and_resume_without_saving() -> None:
     runtime._settings_store = FakeSettingsStore()
     runtime._startup_manager = FakeStartupManager()
     runtime._start_with_windows_enabled = False
-    runtime._latest_result = DetectionResult(
+    runtime._latest_results = (DetectionResult(
         OverlayMode.WATCH,
         (0, 0, 1920, 1080),
         browser_hwnd=101,
         player_visible=False,
-    )
+    ),)
     runtime._menu = QMenu()
     runtime._shutting_down = False
 
@@ -227,6 +228,54 @@ def test_pause_actions_disable_temporarily_and_resume_without_saving() -> None:
         app.processEvents()
 
 
+def test_opening_and_hovering_tray_menus_keeps_overlays_visible() -> None:
+    app = QApplication.instance() or QApplication([])
+    overlay = FakeOverlay()
+    comments_overlay = FakeOverlay()
+    runtime = TrayRuntime.__new__(TrayRuntime)
+    runtime._controller = OverlayController(overlay, comments_overlay)
+    runtime._settings_store = FakeSettingsStore()
+    runtime._startup_manager = FakeStartupManager()
+    runtime._start_with_windows_enabled = False
+    runtime._latest_results = (
+        DetectionResult(
+            OverlayMode.WATCH,
+            (0, 0, 1920, 1080),
+            browser_hwnd=101,
+            player_visible=False,
+        ),
+    )
+    runtime._menu = QMenu()
+    runtime._shutting_down = False
+
+    try:
+        runtime._build_menu()
+        runtime._handle_detection(runtime._latest_results)
+        assert overlay.hide_count == 0
+        assert comments_overlay.hide_count == 0
+
+        runtime._menu.popup(QPoint(10, 10))
+        app.processEvents()
+        runtime._menu.setActiveAction(runtime._pause_menu_action)
+        runtime._pause_menu.popup(QPoint(20, 20))
+        app.processEvents()
+
+        assert overlay.hide_count == 0
+        assert comments_overlay.hide_count == 0
+
+        runtime._handle_detection(runtime._latest_results)
+        assert len(overlay.shown_at) == 2
+        assert len(comments_overlay.shown_at) == 2
+        assert overlay.hide_count == 0
+        assert comments_overlay.hide_count == 0
+    finally:
+        runtime._pause_timer.stop()
+        runtime._pause_menu.close()
+        runtime._menu.close()
+        runtime._menu.deleteLater()
+        app.processEvents()
+
+
 def test_startup_action_updates_registry_and_preserves_preference_in_settings() -> None:
     app = QApplication.instance() or QApplication([])
     runtime = TrayRuntime.__new__(TrayRuntime)
@@ -234,7 +283,7 @@ def test_startup_action_updates_registry_and_preserves_preference_in_settings() 
     runtime._settings_store = FakeSettingsStore()
     runtime._startup_manager = FakeStartupManager()
     runtime._start_with_windows_enabled = False
-    runtime._latest_result = DetectionResult()
+    runtime._latest_results = ()
     runtime._menu = QMenu()
     runtime._shutting_down = False
 
@@ -266,7 +315,7 @@ def test_startup_registry_failure_reverts_checkbox_and_does_not_save() -> None:
     runtime._startup_manager = FakeStartupManager()
     runtime._startup_manager.error = PermissionError("denied")
     runtime._start_with_windows_enabled = False
-    runtime._latest_result = DetectionResult()
+    runtime._latest_results = ()
     runtime._menu = QMenu()
     runtime._tray = FakeTray()
     runtime._shutting_down = False
@@ -292,7 +341,7 @@ def test_startup_setting_save_failure_rolls_back_registry_and_checkbox() -> None
     runtime._settings_store = FakeSettingsStore(succeeds=False)
     runtime._startup_manager = FakeStartupManager()
     runtime._start_with_windows_enabled = False
-    runtime._latest_result = DetectionResult()
+    runtime._latest_results = ()
     runtime._menu = QMenu()
     runtime._tray = FakeTray()
     runtime._shutting_down = False

@@ -8,6 +8,7 @@ class FakeOverlay:
     def __init__(self) -> None:
         self.shown_at: list[tuple[Rect, int]] = []
         self.hide_count = 0
+        self.close_count = 0
 
     def show_at(self, rect: Rect, owner_hwnd: int) -> bool:
         self.shown_at.append((rect, owner_hwnd))
@@ -15,6 +16,19 @@ class FakeOverlay:
 
     def hide_overlay(self) -> None:
         self.hide_count += 1
+
+    def close(self) -> None:
+        self.close_count += 1
+
+
+class FakeOverlayFactory:
+    def __init__(self) -> None:
+        self.created: list[FakeOverlay] = []
+
+    def __call__(self) -> FakeOverlay:
+        overlay = FakeOverlay()
+        self.created.append(overlay)
+        return overlay
 
 
 def test_eligible_detection_shows_at_monitor_relative_bounds() -> None:
@@ -139,17 +153,6 @@ def test_disabled_controller_ignores_eligible_detection() -> None:
     comments_overlay = FakeOverlay()
     controller = OverlayController(overlay, comments_overlay)
     controller.set_enabled(False)
-    controller.handle_detection(DetectionResult(OverlayMode.STANDARD, (0, 0, 1920, 1080), browser_hwnd=101))
-    assert not overlay.shown_at
-    assert overlay.hide_count == 2
-    assert comments_overlay.hide_count == 2
-
-
-def test_open_menu_hides_and_suppresses_overlay() -> None:
-    overlay = FakeOverlay()
-    comments_overlay = FakeOverlay()
-    controller = OverlayController(overlay, comments_overlay)
-    controller.set_menu_open(True)
     controller.handle_detection(DetectionResult(OverlayMode.STANDARD, (0, 0, 1920, 1080), browser_hwnd=101))
     assert not overlay.shown_at
     assert overlay.hide_count == 2
@@ -314,3 +317,97 @@ def test_master_toggle_preserves_individual_preferences() -> None:
     assert controller.comments_enabled is True
     assert not overlay.shown_at
     assert comments_overlay.shown_at == [(Rect(10, 170, 1360, 910), 101)]
+
+
+def test_multiple_windows_receive_independent_overlay_pairs() -> None:
+    factory = FakeOverlayFactory()
+    controller = OverlayController(factory)
+    standard = DetectionResult(
+        OverlayMode.STANDARD,
+        (0, 0, 1920, 1080),
+        browser_hwnd=101,
+    )
+    watch = DetectionResult(
+        OverlayMode.WATCH,
+        (1920, 0, 3840, 1080),
+        browser_hwnd=102,
+        player_visible=False,
+    )
+
+    controller.handle_detections((standard, watch))
+
+    standard_overlay, standard_comments, watch_overlay, watch_comments = factory.created
+    assert standard_overlay.shown_at == [(Rect(260, 171, 1631, 852), 101)]
+    assert not standard_comments.shown_at
+    assert watch_overlay.shown_at == [(Rect(3280, 170, 536, 858), 102)]
+    assert watch_comments.shown_at == [(Rect(1930, 170, 1360, 910), 102)]
+
+    controller.set_enabled(False)
+    assert all(overlay.hide_count for overlay in factory.created)
+    controller.set_enabled(True)
+    controller.handle_detections((standard, watch))
+    assert len(standard_overlay.shown_at) == 2
+    assert len(watch_overlay.shown_at) == 2
+
+    controller.close()
+    assert all(overlay.close_count == 1 for overlay in factory.created)
+
+
+def test_removing_one_result_disposes_only_that_windows_overlays() -> None:
+    factory = FakeOverlayFactory()
+    controller = OverlayController(factory)
+    first = DetectionResult(
+        OverlayMode.STANDARD,
+        (0, 0, 1920, 1080),
+        browser_hwnd=101,
+    )
+    second = DetectionResult(
+        OverlayMode.STANDARD,
+        (1920, 0, 3840, 1080),
+        browser_hwnd=102,
+    )
+    controller.handle_detections((first, second))
+    first_overlay, first_comments, second_overlay, second_comments = factory.created
+
+    controller.handle_detections((second,))
+
+    assert first_overlay.close_count == 1
+    assert first_comments.close_count == 1
+    assert second_overlay.close_count == 0
+    assert second_comments.close_count == 0
+    assert len(second_overlay.shown_at) == 2
+
+
+def test_individual_blocker_preferences_apply_to_every_window() -> None:
+    factory = FakeOverlayFactory()
+    controller = OverlayController(factory)
+    standard = DetectionResult(
+        OverlayMode.STANDARD,
+        (0, 0, 1920, 1080),
+        browser_hwnd=101,
+    )
+    watch = DetectionResult(
+        OverlayMode.WATCH,
+        (1920, 0, 3840, 1080),
+        browser_hwnd=102,
+        player_visible=False,
+    )
+    controller.handle_detections((standard, watch))
+    standard_overlay, _standard_comments, watch_overlay, watch_comments = factory.created
+
+    controller.set_feed_recommendations_enabled(False)
+    controller.set_watch_recommendations_enabled(False)
+    controller.set_comments_enabled(False)
+    controller.handle_detections((standard, watch))
+
+    assert len(standard_overlay.shown_at) == 1
+    assert len(watch_overlay.shown_at) == 1
+    assert len(watch_comments.shown_at) == 1
+
+    controller.set_feed_recommendations_enabled(True)
+    controller.set_watch_recommendations_enabled(True)
+    controller.set_comments_enabled(True)
+    controller.handle_detections((standard, watch))
+    assert len(standard_overlay.shown_at) == 2
+    assert len(watch_overlay.shown_at) == 2
+    assert len(watch_comments.shown_at) == 2

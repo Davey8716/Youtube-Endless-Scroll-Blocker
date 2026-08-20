@@ -195,6 +195,17 @@ def test_document_scroll_state_is_used_before_wheel_input_exists() -> None:
     assert tracker.visibility(101, MONITOR, WATCH_URL, active=True) is False
 
 
+def test_background_window_retains_its_last_known_player_visibility() -> None:
+    monitor = FakeMonitor()
+    document_reader = FakeDocumentReader(DocumentScrollState(700.0, 110))
+    tracker = make_tracker(monitor, document_reader)
+
+    assert tracker.visibility(101, MONITOR, WATCH_URL, active=True) is False
+    document_reader.state = None
+    assert tracker.visibility(101, MONITOR, WATCH_URL, active=False) is False
+    assert tracker.visibility(101, MONITOR, WATCH_URL + "-new", active=False) is None
+
+
 def test_document_scroll_reader_converts_percent_to_pixel_offset(monkeypatch) -> None:
     pattern = StubScrollPattern(scroll_percent=10.0, view_percent=10.0)
     control = StubControl(pattern, StubBounds(0, 110, 1920, 1080))

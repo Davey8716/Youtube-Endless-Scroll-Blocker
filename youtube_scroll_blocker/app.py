@@ -82,7 +82,7 @@ class DetectionThread(QThread):
     def run(self) -> None:
         with auto.UIAutomationInitializerInThread():
             while not self._stop_event.is_set():
-                self.result_ready.emit(self._detector.detect())
+                self.result_ready.emit(self._detector.detect_all())
                 self._stop_event.wait(self._interval)
 
     def stop(self) -> None:
@@ -102,16 +102,13 @@ class TrayRuntime:
         self._startup_manager = startup_manager or StartupManager()
         settings = self._settings_store.load()
         self._start_with_windows_enabled = settings.start_with_windows_enabled
-        self._overlay = BlackOverlay()
-        self._comments_overlay = BlackOverlay()
         self._controller = OverlayController(
-            self._overlay,
-            self._comments_overlay,
+            BlackOverlay,
             feed_recommendations_enabled=settings.feed_recommendations_enabled,
             watch_recommendations_enabled=settings.watch_recommendations_enabled,
             comments_enabled=settings.comments_enabled,
         )
-        self._latest_result = DetectionResult()
+        self._latest_results: tuple[DetectionResult, ...] = ()
 
         icon = QIcon(str(resource_path("assets/app.ico")))
         self._tray = QSystemTrayIcon(icon, app)
@@ -120,13 +117,13 @@ class TrayRuntime:
         self._build_menu()
         self._tray.setContextMenu(self._menu)
 
-        self._menu.aboutToShow.connect(self._menu_opened)
-        self._menu.aboutToHide.connect(self._menu_closed)
-
         self._wheel_monitor = MouseWheelMonitor()
         self._wheel_monitor.start()
         self._detector_thread = DetectionThread(
-            BrowserDetector(player_tracker=WatchScrollTracker(self._wheel_monitor))
+            BrowserDetector(
+                player_tracker_factory=WatchScrollTracker,
+                wheel_monitor=self._wheel_monitor,
+            )
         )
         self._detector_thread.result_ready.connect(self._handle_detection)
         self._detector_thread.start()
@@ -192,7 +189,7 @@ class TrayRuntime:
         else:
             self._cancel_pause()
             self._controller.set_enabled(True)
-            self._controller.handle_detection(self._latest_result)
+            self._controller.handle_detections(self._latest_results)
         self._sync_master_controls()
 
     def _start_pause(self, minutes: int) -> None:
@@ -217,7 +214,7 @@ class TrayRuntime:
         self._pause_minutes = None
         self._controller.set_enabled(True)
         self._sync_master_controls()
-        self._controller.handle_detection(self._latest_result)
+        self._controller.handle_detections(self._latest_results)
 
     def _sync_master_controls(self) -> None:
         self._toggle_action.setText("Turn Off" if self._controller.enabled else "Turn On")
@@ -270,17 +267,17 @@ class TrayRuntime:
     def _toggle_feed_recommendations(self, enabled: bool) -> None:
         self._controller.set_feed_recommendations_enabled(enabled)
         self._save_blocker_settings()
-        self._controller.handle_detection(self._latest_result)
+        self._controller.handle_detections(self._latest_results)
 
     def _toggle_watch_recommendations(self, enabled: bool) -> None:
         self._controller.set_watch_recommendations_enabled(enabled)
         self._save_blocker_settings()
-        self._controller.handle_detection(self._latest_result)
+        self._controller.handle_detections(self._latest_results)
 
     def _toggle_comments(self, enabled: bool) -> None:
         self._controller.set_comments_enabled(enabled)
         self._save_blocker_settings()
-        self._controller.handle_detection(self._latest_result)
+        self._controller.handle_detections(self._latest_results)
 
     def _save_blocker_settings(self) -> bool:
         return self._settings_store.save(
@@ -292,21 +289,9 @@ class TrayRuntime:
             )
         )
 
-    def _menu_opened(self) -> None:
-        self._controller.set_menu_open(True)
-
-    def _menu_closed(self) -> None:
-        QTimer.singleShot(100, self._restore_after_menu)
-
-    def _restore_after_menu(self) -> None:
-        if self._shutting_down:
-            return
-        self._controller.set_menu_open(False)
-        self._controller.handle_detection(self._latest_result)
-
-    def _handle_detection(self, result: DetectionResult) -> None:
-        self._latest_result = result
-        self._controller.handle_detection(result)
+    def _handle_detection(self, results: tuple[DetectionResult, ...]) -> None:
+        self._latest_results = results
+        self._controller.handle_detections(results)
 
     def shutdown(self) -> None:
         if self._shutting_down:
@@ -318,8 +303,7 @@ class TrayRuntime:
         self._detector_thread.stop()
         self._detector_thread.wait(3000)
         self._wheel_monitor.stop()
-        self._comments_overlay.close()
-        self._overlay.close()
+        self._controller.close()
         self._app.quit()
 
 

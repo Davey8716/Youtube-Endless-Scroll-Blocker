@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import threading
 from collections import deque
+from collections.abc import Sequence
 from ctypes import wintypes
 from dataclasses import dataclass
 
@@ -310,10 +311,14 @@ class WatchScrollTracker:
         self._wheel_monitor = wheel_monitor
         self._document_reader = document_reader or DocumentScrollReader()
         self._accumulator = accumulator or WheelScrollAccumulator()
+        self._last_context: tuple[int, str] | None = None
+        self._last_visibility: bool | None = None
 
     def reset(self) -> None:
         self._document_reader.reset()
         self._accumulator.reset()
+        self._last_context = None
+        self._last_visibility = None
         if self._wheel_monitor is not None:
             self._wheel_monitor.drain()
 
@@ -324,12 +329,18 @@ class WatchScrollTracker:
         url: str,
         *,
         active: bool,
+        events: Sequence[ScrollInputEvent] | None = None,
     ) -> bool | None:
-        document_state = self._document_reader.read(hwnd, monitor_rect, url)
+        context = (hwnd, url)
+        if context != self._last_context:
+            self._last_context = context
+            self._last_visibility = None
+        document_state = self._document_reader.read(hwnd, monitor_rect, url) if active else None
         content_top = document_state.content_top if document_state else FALLBACK_CONTENT_TOP
-        events = self._wheel_monitor.drain() if self._wheel_monitor is not None else []
+        if events is None:
+            events = self._wheel_monitor.drain() if self._wheel_monitor is not None else []
         wheel_offset = self._accumulator.update(
-            events,
+            list(events),
             hwnd=hwnd,
             url=url,
             monitor_rect=monitor_rect,
@@ -342,7 +353,8 @@ class WatchScrollTracker:
         elif document_state is not None:
             scroll_offset = document_state.offset
         else:
-            return None
+            return self._last_visibility
 
         threshold = max(1, PLAYER_BOTTOM - content_top)
-        return scroll_offset < threshold
+        self._last_visibility = scroll_offset < threshold
+        return self._last_visibility

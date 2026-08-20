@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from youtube_scroll_blocker import browser_detection
 from youtube_scroll_blocker.browser_detection import AddressBarState, BrowserDetector
+from youtube_scroll_blocker.scroll_detection import WheelEvent
 from youtube_scroll_blocker.url_rules import OverlayMode
 
 
@@ -24,6 +25,7 @@ class StubPlayerTracker:
     def __init__(self, visible: bool | None = None) -> None:
         self.visible = visible
         self.calls: list[tuple[int, tuple[int, int, int, int], str, bool]] = []
+        self.event_batches: list[tuple] = []
         self.reset_count = 0
 
     def visibility(
@@ -33,8 +35,10 @@ class StubPlayerTracker:
         url: str,
         *,
         active: bool,
+        events=None,
     ) -> bool | None:
         self.calls.append((hwnd, monitor_rect, url, active))
+        self.event_batches.append(tuple(events or ()))
         return self.visible
 
     def reset(self) -> None:
@@ -47,6 +51,29 @@ class MappingAddressReader:
 
     def inspect(self, hwnd: int) -> AddressBarState:
         return self.addresses[hwnd]
+
+
+class FailingMappingAddressReader(MappingAddressReader):
+    def __init__(self, addresses: dict[int, AddressBarState], failing_hwnd: int) -> None:
+        super().__init__(addresses)
+        self.failing_hwnd = failing_hwnd
+
+    def inspect(self, hwnd: int) -> AddressBarState:
+        if hwnd == self.failing_hwnd:
+            raise OSError("UI Automation failed")
+        return super().inspect(hwnd)
+
+
+class FakeWheelMonitor:
+    def __init__(self, events: list[WheelEvent]) -> None:
+        self.events = events
+        self.drain_count = 0
+
+    def drain(self) -> list[WheelEvent]:
+        self.drain_count += 1
+        events = list(self.events)
+        self.events.clear()
+        return events
 
 
 class StubPattern:
@@ -111,6 +138,11 @@ def configure_active_brave(monkeypatch, *, maximized: bool = True, fullscreen: b
         "maximized_hwnds": {101} if maximized else set(),
     }
     monkeypatch.setattr(browser_detection.win32gui, "GetForegroundWindow", lambda: environment["foreground"])
+    monkeypatch.setattr(
+        browser_detection.win32gui,
+        "EnumWindows",
+        lambda callback, extra: [callback(hwnd, extra) for hwnd in sorted(environment["valid_hwnds"])],
+    )
     monkeypatch.setattr(browser_detection.win32gui, "IsWindow", lambda hwnd: hwnd in environment["valid_hwnds"])
     monkeypatch.setattr(
         browser_detection.win32gui,
@@ -202,7 +234,6 @@ def test_fullscreen_watch_page_is_not_eligible(monkeypatch) -> None:
     configure_active_brave(monkeypatch, fullscreen=True)
     result = BrowserDetector(StubAddressReader("https://www.youtube.com/watch?v=test-id", visible=False)).detect()
     assert result.mode is OverlayMode.NONE
-    assert result.url == "https://www.youtube.com/watch?v=test-id"
 
 
 def test_hidden_browser_chrome_fails_closed(monkeypatch) -> None:
@@ -215,7 +246,6 @@ def test_watch_page_without_video_id_is_not_eligible(monkeypatch) -> None:
     configure_active_brave(monkeypatch)
     result = BrowserDetector(StubAddressReader("https://www.youtube.com/watch?feature=test")).detect()
     assert not result.should_show
-    assert result.url == "https://www.youtube.com/watch?feature=test"
 
 
 def test_shorts_page_is_not_eligible(monkeypatch) -> None:
@@ -230,11 +260,12 @@ def test_restored_brave_window_is_not_eligible(monkeypatch) -> None:
     assert not result.should_show
 
 
-def test_non_brave_foreground_window_is_not_eligible(monkeypatch) -> None:
+def test_non_brave_foreground_does_not_remove_eligible_brave_window(monkeypatch) -> None:
     environment = configure_active_brave(monkeypatch)
     environment["foreground"] = 999
     result = BrowserDetector(StubAddressReader("https://www.youtube.com/")).detect()
-    assert not result.should_show
+    assert result.should_show
+    assert result.browser_hwnd == 101
 
 
 def test_tracked_overlay_persists_when_another_application_gets_focus(monkeypatch) -> None:
@@ -264,7 +295,7 @@ def test_tracked_watch_overlay_persists_when_another_application_gets_focus(monk
     assert result.browser_hwnd == 101
 
 
-def test_newly_focused_brave_window_replaces_tracked_window(monkeypatch) -> None:
+def test_focused_exempt_brave_window_does_not_remove_eligible_window(monkeypatch) -> None:
     environment = configure_active_brave(monkeypatch)
     environment["brave_hwnds"].add(102)
     environment["valid_hwnds"].add(102)
@@ -281,12 +312,134 @@ def test_newly_focused_brave_window_replaces_tracked_window(monkeypatch) -> None
     assert detector.detect().browser_hwnd == 101
     environment["foreground"] = 102
 
-    result = detector.detect()
-    assert result.mode is OverlayMode.NONE
-    assert result.browser_hwnd == 102
+    results = detector.detect_all()
+    assert [result.browser_hwnd for result in results] == [101]
 
     environment["foreground"] = 999
-    assert detector.detect().browser_hwnd == 102
+    assert detector.detect().browser_hwnd == 101
+
+
+def test_detect_all_returns_every_eligible_brave_window(monkeypatch) -> None:
+    environment = configure_active_brave(monkeypatch)
+    for hwnd in (102, 103):
+        environment["brave_hwnds"].add(hwnd)
+        environment["valid_hwnds"].add(hwnd)
+        environment["visible_hwnds"].add(hwnd)
+        environment["maximized_hwnds"].add(hwnd)
+    reader = MappingAddressReader(
+        {
+            101: AddressBarState("https://www.youtube.com/", True),
+            102: AddressBarState("https://www.youtube.com/watch?v=second", True),
+            103: AddressBarState("https://www.youtube.com/@allowed", True),
+        }
+    )
+    monitor_rects = {
+        101: (0, 0, 1920, 1080),
+        102: (1920, 0, 3840, 1080),
+        103: (3840, 0, 5760, 1080),
+    }
+    monkeypatch.setattr(browser_detection.win32api, "MonitorFromWindow", lambda hwnd, _flag: hwnd)
+    monkeypatch.setattr(
+        browser_detection.win32api,
+        "GetMonitorInfo",
+        lambda monitor: {"Monitor": monitor_rects[monitor]},
+    )
+
+    results = BrowserDetector(reader, StubPlayerTracker(True)).detect_all()
+
+    assert [(result.browser_hwnd, result.mode, result.monitor_rect) for result in results] == [
+        (101, OverlayMode.STANDARD, monitor_rects[101]),
+        (102, OverlayMode.WATCH, monitor_rects[102]),
+    ]
+
+
+def test_watch_trackers_are_independent_and_share_one_drained_event_batch(monkeypatch) -> None:
+    environment = configure_active_brave(monkeypatch)
+    environment["brave_hwnds"].add(102)
+    environment["valid_hwnds"].add(102)
+    environment["visible_hwnds"].add(102)
+    environment["maximized_hwnds"].add(102)
+    reader = MappingAddressReader(
+        {
+            101: AddressBarState("https://www.youtube.com/watch?v=first", True),
+            102: AddressBarState("https://www.youtube.com/watch?v=second", True),
+        }
+    )
+    trackers: list[StubPlayerTracker] = []
+
+    def make_tracker() -> StubPlayerTracker:
+        tracker = StubPlayerTracker(True)
+        trackers.append(tracker)
+        return tracker
+
+    event = WheelEvent(-120, 800, 500)
+    wheel_monitor = FakeWheelMonitor([event])
+    detector = BrowserDetector(
+        reader,
+        player_tracker_factory=make_tracker,
+        wheel_monitor=wheel_monitor,  # type: ignore[arg-type]
+    )
+
+    assert len(detector.detect_all()) == 2
+    assert wheel_monitor.drain_count == 1
+    assert len(trackers) == 2
+    assert [tracker.calls[0][-1] for tracker in trackers] == [True, False]
+    assert [tracker.event_batches[0] for tracker in trackers] == [(event,), (event,)]
+
+    environment["foreground"] = 102
+    assert len(detector.detect_all()) == 2
+    assert len(trackers) == 2
+    assert [tracker.calls[-1][-1] for tracker in trackers] == [False, True]
+
+
+def test_one_window_inspection_failure_does_not_clear_other_results(monkeypatch) -> None:
+    environment = configure_active_brave(monkeypatch)
+    environment["brave_hwnds"].add(102)
+    environment["valid_hwnds"].add(102)
+    environment["visible_hwnds"].add(102)
+    environment["maximized_hwnds"].add(102)
+    reader = FailingMappingAddressReader(
+        {
+            101: AddressBarState("https://www.youtube.com/", True),
+            102: AddressBarState("https://www.youtube.com/watch?v=second", True),
+        },
+        failing_hwnd=102,
+    )
+
+    results = BrowserDetector(reader).detect_all()
+
+    assert [result.browser_hwnd for result in results] == [101]
+
+
+def test_each_window_becoming_ineligible_is_removed_independently(monkeypatch) -> None:
+    environment = configure_active_brave(monkeypatch)
+    environment["brave_hwnds"].add(102)
+    environment["valid_hwnds"].add(102)
+    environment["visible_hwnds"].add(102)
+    environment["maximized_hwnds"].add(102)
+    reader = MappingAddressReader(
+        {
+            101: AddressBarState("https://www.youtube.com/", True),
+            102: AddressBarState("https://www.youtube.com/feed/subscriptions", True),
+        }
+    )
+    detector = BrowserDetector(reader)
+
+    assert [result.browser_hwnd for result in detector.detect_all()] == [101, 102]
+
+    reader.addresses[102] = AddressBarState("https://www.youtube.com/@allowed", True)
+    assert [result.browser_hwnd for result in detector.detect_all()] == [101]
+
+    reader.addresses[102] = AddressBarState("https://www.youtube.com/", True)
+    environment["iconic_hwnds"].add(102)
+    assert [result.browser_hwnd for result in detector.detect_all()] == [101]
+
+    environment["iconic_hwnds"].remove(102)
+    environment["maximized_hwnds"].remove(102)
+    assert [result.browser_hwnd for result in detector.detect_all()] == [101]
+
+    environment["valid_hwnds"].remove(102)
+    assert [result.browser_hwnd for result in detector.detect_all()] == [101]
 
 
 def test_exempt_navigation_is_detected_while_brave_is_unfocused(monkeypatch) -> None:
@@ -298,9 +451,7 @@ def test_exempt_navigation_is_detected_while_brave_is_unfocused(monkeypatch) -> 
     environment["foreground"] = 999
     reader.url = "https://www.youtube.com/feed/history"
 
-    result = detector.detect()
-    assert result.mode is OverlayMode.NONE
-    assert result.browser_hwnd == 101
+    assert detector.detect_all() == ()
 
 
 def test_invalid_tracked_window_is_cleared(monkeypatch) -> None:
@@ -311,9 +462,7 @@ def test_invalid_tracked_window_is_cleared(monkeypatch) -> None:
     environment["foreground"] = 999
     environment["valid_hwnds"].remove(101)
 
-    result = detector.detect()
-    assert result.mode is OverlayMode.NONE
-    assert result.browser_hwnd is None
+    assert detector.detect_all() == ()
 
 
 def test_hidden_tracked_window_is_cleared(monkeypatch) -> None:
@@ -324,7 +473,7 @@ def test_hidden_tracked_window_is_cleared(monkeypatch) -> None:
     environment["foreground"] = 999
     environment["visible_hwnds"].remove(101)
 
-    assert detector.detect().browser_hwnd is None
+    assert detector.detect_all() == ()
 
 
 def test_minimized_tracked_window_is_cleared(monkeypatch) -> None:
@@ -335,7 +484,7 @@ def test_minimized_tracked_window_is_cleared(monkeypatch) -> None:
     environment["foreground"] = 999
     environment["iconic_hwnds"].add(101)
 
-    assert detector.detect().browser_hwnd is None
+    assert detector.detect_all() == ()
 
 
 def test_restored_tracked_window_is_cleared(monkeypatch) -> None:
@@ -346,12 +495,17 @@ def test_restored_tracked_window_is_cleared(monkeypatch) -> None:
     environment["foreground"] = 999
     environment["maximized_hwnds"].remove(101)
 
-    assert detector.detect().browser_hwnd is None
+    assert detector.detect_all() == ()
 
 
 def test_detection_failure_hides_overlay(monkeypatch) -> None:
     monkeypatch.setattr(browser_detection.win32gui, "GetForegroundWindow", lambda: (_ for _ in ()).throw(OSError()))
-    assert not BrowserDetector(StubAddressReader(None)).detect().should_show
+    monkeypatch.setattr(
+        browser_detection.win32gui,
+        "EnumWindows",
+        lambda _callback, _extra: (_ for _ in ()).throw(OSError()),
+    )
+    assert BrowserDetector(StubAddressReader(None)).detect_all() == ()
 
 
 def test_address_bar_inspection_reports_visible_chrome(monkeypatch) -> None:

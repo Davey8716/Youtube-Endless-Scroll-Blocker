@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+from collections.abc import Callable, Sequence
 from ctypes import wintypes
 from dataclasses import dataclass
 from typing import Protocol
@@ -12,7 +13,7 @@ import win32con
 import win32gui
 import win32process
 
-from .scroll_detection import WatchScrollTracker
+from .scroll_detection import MouseWheelMonitor, ScrollInputEvent, WatchScrollTracker
 from .url_rules import OverlayMode, overlay_mode_for_url
 
 
@@ -48,6 +49,7 @@ class PlayerVisibilityTracker(Protocol):
         url: str,
         *,
         active: bool,
+        events: Sequence[ScrollInputEvent] | None = None,
     ) -> bool | None: ...
 
     def reset(self) -> None: ...
@@ -62,6 +64,21 @@ def _is_brave_window(hwnd: int) -> bool:
         return False
     _thread_id, process_id = win32process.GetWindowThreadProcessId(hwnd)
     return _process_executable_name(process_id) == "brave.exe"
+
+
+def _brave_windows() -> tuple[int, ...]:
+    hwnds: list[int] = []
+
+    def collect(hwnd: int, _extra: object) -> bool:
+        try:
+            if _is_brave_window(hwnd):
+                hwnds.append(hwnd)
+        except Exception:
+            pass
+        return True
+
+    win32gui.EnumWindows(collect, None)
+    return tuple(hwnds)
 
 
 def _extended_frame_bounds(hwnd: int) -> tuple[int, int, int, int]:
@@ -290,70 +307,111 @@ class BrowserDetector:
         self,
         address_reader: BraveAddressBarReader | None = None,
         player_tracker: PlayerVisibilityTracker | None = None,
+        *,
+        player_tracker_factory: Callable[[], PlayerVisibilityTracker] | None = None,
+        wheel_monitor: MouseWheelMonitor | None = None,
     ) -> None:
         self._address_reader = address_reader or BraveAddressBarReader()
-        self._player_tracker = player_tracker or WatchScrollTracker()
-        self._tracked_hwnd: int | None = None
+        self._initial_player_tracker = player_tracker
+        self._player_tracker_factory = player_tracker_factory or WatchScrollTracker
+        self._player_trackers: dict[int, PlayerVisibilityTracker] = {}
+        self._wheel_monitor = wheel_monitor
 
-    def detect(self) -> DetectionResult:
+    def _tracker_for(self, hwnd: int) -> PlayerVisibilityTracker:
+        tracker = self._player_trackers.get(hwnd)
+        if tracker is not None:
+            return tracker
+        if self._initial_player_tracker is not None:
+            tracker = self._initial_player_tracker
+            self._initial_player_tracker = None
+        else:
+            tracker = self._player_tracker_factory()
+        self._player_trackers[hwnd] = tracker
+        return tracker
+
+    def _discard_tracker(self, hwnd: int) -> None:
+        tracker = self._player_trackers.pop(hwnd, None)
+        if tracker is not None:
+            tracker.reset()
+
+    def detect_all(self) -> tuple[DetectionResult, ...]:
         try:
             foreground_hwnd = win32gui.GetForegroundWindow()
-            if _is_brave_window(foreground_hwnd):
-                self._tracked_hwnd = foreground_hwnd
-
-            hwnd = self._tracked_hwnd
-            if not hwnd or not _is_brave_window(hwnd):
-                self._tracked_hwnd = None
-                self._player_tracker.reset()
-                return DetectionResult()
-            if win32gui.IsIconic(hwnd) or not _is_window_maximized(hwnd):
-                self._tracked_hwnd = None
-                self._player_tracker.reset()
-                return DetectionResult()
-
-            monitor = win32api.MonitorFromWindow(hwnd, win32con.MONITOR_DEFAULTTONEAREST)
-            monitor_rect = tuple(int(value) for value in win32api.GetMonitorInfo(monitor)["Monitor"])
-            address_bar = self._address_reader.inspect(hwnd)
-            if _is_fullscreen_window(hwnd, monitor_rect, address_bar.visible):
-                return DetectionResult(
-                    url=address_bar.url,
-                    browser_hwnd=hwnd,
-                    theatre_mode=address_bar.theatre_mode,
-                )
-            if not address_bar.visible or not address_bar.url:
-                return DetectionResult(
-                    url=address_bar.url,
-                    browser_hwnd=hwnd,
-                    theatre_mode=address_bar.theatre_mode,
-                )
-
-            mode = overlay_mode_for_url(address_bar.url)
-            if mode is OverlayMode.NONE:
-                self._player_tracker.reset()
-                return DetectionResult(
-                    url=address_bar.url,
-                    browser_hwnd=hwnd,
-                    theatre_mode=address_bar.theatre_mode,
-                )
-            player_visible = None
-            if mode is OverlayMode.WATCH:
-                player_visible = self._player_tracker.visibility(
-                    hwnd,
-                    monitor_rect,
-                    address_bar.url,
-                    active=foreground_hwnd == hwnd,
-                )
-            else:
-                self._player_tracker.reset()
-            return DetectionResult(
-                mode,
-                monitor_rect=monitor_rect,
-                url=address_bar.url,
-                browser_hwnd=hwnd,
-                player_visible=player_visible,
-                theatre_mode=address_bar.theatre_mode,
-            )
         except Exception:
-            self._tracked_hwnd = None
-            self._player_tracker.reset()
+            foreground_hwnd = 0
+        try:
+            hwnds = _brave_windows()
+        except Exception:
+            return ()
+
+        events: Sequence[ScrollInputEvent] = ()
+        if self._wheel_monitor is not None:
+            events = self._wheel_monitor.drain()
+
+        results: list[DetectionResult] = []
+        watch_hwnds: set[int] = set()
+        for hwnd in hwnds:
+            try:
+                if win32gui.IsIconic(hwnd) or not _is_window_maximized(hwnd):
+                    self._discard_tracker(hwnd)
+                    continue
+
+                monitor = win32api.MonitorFromWindow(hwnd, win32con.MONITOR_DEFAULTTONEAREST)
+                monitor_rect = tuple(
+                    int(value) for value in win32api.GetMonitorInfo(monitor)["Monitor"]
+                )
+                address_bar = self._address_reader.inspect(hwnd)
+                if _is_fullscreen_window(hwnd, monitor_rect, address_bar.visible):
+                    self._discard_tracker(hwnd)
+                    continue
+                if not address_bar.visible or not address_bar.url:
+                    self._discard_tracker(hwnd)
+                    continue
+
+                mode = overlay_mode_for_url(address_bar.url)
+                if mode is OverlayMode.NONE:
+                    self._discard_tracker(hwnd)
+                    continue
+
+                player_visible = None
+                if mode is OverlayMode.WATCH:
+                    watch_hwnds.add(hwnd)
+                    player_visible = self._tracker_for(hwnd).visibility(
+                        hwnd,
+                        monitor_rect,
+                        address_bar.url,
+                        active=foreground_hwnd == hwnd,
+                        events=events,
+                    )
+                else:
+                    self._discard_tracker(hwnd)
+                results.append(
+                    DetectionResult(
+                        mode,
+                        monitor_rect=monitor_rect,
+                        url=address_bar.url,
+                        browser_hwnd=hwnd,
+                        player_visible=player_visible,
+                        theatre_mode=address_bar.theatre_mode,
+                    )
+                )
+            except Exception:
+                self._discard_tracker(hwnd)
+
+        for hwnd in tuple(self._player_trackers):
+            if hwnd not in watch_hwnds:
+                self._discard_tracker(hwnd)
+        return tuple(results)
+
+    def detect(self) -> DetectionResult:
+        results = self.detect_all()
+        if not results:
             return DetectionResult()
+        try:
+            foreground_hwnd = win32gui.GetForegroundWindow()
+        except Exception:
+            foreground_hwnd = 0
+        return next(
+            (result for result in results if result.browser_hwnd == foreground_hwnd),
+            results[0],
+        )
