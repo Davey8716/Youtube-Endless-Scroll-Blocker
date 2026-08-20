@@ -3,7 +3,7 @@
 A small Windows tray app that places click-blocking overlays over YouTube's most distracting areas in Brave. It blocks home and discovery feeds, watch-page recommendations, and comments after you scroll past the video, while leaving search, playlists, and channel pages available.
 
 > [!IMPORTANT]
-> The overlay positions are designed for a maximized Brave window on a 1920 x 1080 landscape display. Watch-page suggestions are also supported on a 1080 x 1920 portrait display; home/discovery feeds and comments are not yet blocked in portrait. Other resolutions, browser layouts, display scaling settings, and browsers are not supported.
+> The overlay positions are designed for a maximized Brave window on a 1920 x 1080 landscape display. Watch-page suggestions and comments are also supported on a 1080 x 1920 portrait display; home/discovery feeds are not blocked in portrait. Other resolutions, browser layouts, display scaling settings, and browsers are not supported.
 
 ## What it blocks
 
@@ -23,7 +23,7 @@ The app follows every eligible maximized Brave window. Each overlay stays attach
 
 - Windows
 - [Brave](https://brave.com/) browser
-- A 1920 x 1080 landscape display, or a 1080 x 1920 portrait display for watch-page suggestions, with Brave maximized
+- A 1920 x 1080 landscape display, or a 1080 x 1920 portrait display for watch-page suggestions and comments, with Brave maximized
 - Python 3.10 when running from source
 
 ## Run from source

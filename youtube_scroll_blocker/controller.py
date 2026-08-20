@@ -108,7 +108,12 @@ class OverlayController:
                 pair.recommendations.show_at(rect, result.browser_hwnd)
             else:
                 pair.recommendations.hide_overlay()
-            if self.comments_enabled and result.player_visible is False:
+            comments_mode_supported = not portrait or result.theatre_mode is False
+            if (
+                self.comments_enabled
+                and comments_mode_supported
+                and result.player_visible is False
+            ):
                 comments_rect = comments_overlay_rect_for_monitor(result.monitor_rect)
                 if comments_rect is not None:
                     pair.comments.show_at(comments_rect, result.browser_hwnd)

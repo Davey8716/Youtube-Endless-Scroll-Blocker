@@ -117,7 +117,7 @@ def test_portrait_regular_watch_mode_uses_portrait_recommendations_bounds() -> N
         )
     )
 
-    assert overlay.shown_at == [(Rect(4559, 177, 362, 1694), 102)]
+    assert overlay.shown_at == [(Rect(4562, 177, 336, 1694), 102)]
     assert not comments_overlay.shown_at
 
 
@@ -148,10 +148,10 @@ def test_portrait_theatre_and_unknown_modes_hide_then_regular_mode_restores() ->
             theatre_mode=False,
         )
     )
-    assert overlay.shown_at == [(Rect(4559, 177, 362, 1694), 102)]
+    assert overlay.shown_at == [(Rect(4562, 177, 336, 1694), 102)]
 
 
-def test_portrait_feeds_and_comments_remain_hidden_without_layouts() -> None:
+def test_portrait_feeds_remain_hidden_and_regular_comments_use_portrait_bounds() -> None:
     overlay = FakeOverlay()
     comments_overlay = FakeOverlay()
     controller = OverlayController(overlay, comments_overlay)
@@ -170,8 +170,67 @@ def test_portrait_feeds_and_comments_remain_hidden_without_layouts() -> None:
         )
     )
 
-    assert overlay.shown_at == [(Rect(4559, 177, 362, 1694), 102)]
+    assert overlay.shown_at == [(Rect(4562, 177, 336, 1694), 102)]
+    assert comments_overlay.shown_at == [(Rect(3846, 177, 717, 1694), 102)]
+
+
+def test_portrait_comments_hide_for_theatre_and_unknown_then_restore() -> None:
+    overlay = FakeOverlay()
+    comments_overlay = FakeOverlay()
+    controller = OverlayController(overlay, comments_overlay)
+    monitor = (3840, 0, 4920, 1920)
+
+    for theatre_mode in (True, None):
+        controller.handle_detection(
+            DetectionResult(
+                OverlayMode.WATCH,
+                monitor,
+                browser_hwnd=102,
+                player_visible=False,
+                theatre_mode=theatre_mode,
+            )
+        )
     assert not comments_overlay.shown_at
+
+    controller.handle_detection(
+        DetectionResult(
+            OverlayMode.WATCH,
+            monitor,
+            browser_hwnd=102,
+            player_visible=False,
+            theatre_mode=False,
+        )
+    )
+    assert comments_overlay.shown_at == [(Rect(3846, 177, 717, 1694), 102)]
+
+
+def test_portrait_comments_hide_when_player_is_visible() -> None:
+    overlay = FakeOverlay()
+    comments_overlay = FakeOverlay()
+    controller = OverlayController(overlay, comments_overlay)
+    monitor = (3840, 0, 4920, 1920)
+
+    controller.handle_detection(
+        DetectionResult(
+            OverlayMode.WATCH,
+            monitor,
+            browser_hwnd=102,
+            player_visible=False,
+            theatre_mode=False,
+        )
+    )
+    controller.handle_detection(
+        DetectionResult(
+            OverlayMode.WATCH,
+            monitor,
+            browser_hwnd=102,
+            player_visible=True,
+            theatre_mode=False,
+        )
+    )
+
+    assert comments_overlay.shown_at == [(Rect(3846, 177, 717, 1694), 102)]
+    assert comments_overlay.hide_count == 1
 
 
 def test_global_master_and_watch_setting_control_portrait_recommendations() -> None:
@@ -192,7 +251,7 @@ def test_global_master_and_watch_setting_control_portrait_recommendations() -> N
 
     controller.set_enabled(True)
     controller.handle_detection(result)
-    assert overlay.shown_at == [(Rect(4559, 177, 362, 1694), 102)]
+    assert overlay.shown_at == [(Rect(4562, 177, 336, 1694), 102)]
 
     controller.set_watch_recommendations_enabled(False)
     controller.handle_detection(result)

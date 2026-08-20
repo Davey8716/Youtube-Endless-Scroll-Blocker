@@ -16,6 +16,10 @@ PORTRAIT_WATCH_OVERLAY_Y = 177
 PORTRAIT_WATCH_OVERLAY_WIDTH = 336
 PORTRAIT_WATCH_OVERLAY_HEIGHT = 1694
 SUPPORTED_PORTRAIT_SIZE = (1080, 1920)
+PORTRAIT_COMMENTS_OVERLAY_RIGHT = 723
+PORTRAIT_COMMENTS_OVERLAY_Y = 177
+PORTRAIT_COMMENTS_OVERLAY_WIDTH = 717
+PORTRAIT_COMMENTS_OVERLAY_HEIGHT = 1694
 COMMENTS_OVERLAY_X = 10
 COMMENTS_OVERLAY_Y = 170
 COMMENTS_OVERLAY_WIDTH = 1360
@@ -70,9 +74,18 @@ def watch_overlay_rect_for_monitor(monitor_rect: tuple[int, int, int, int]) -> R
 def comments_overlay_rect_for_monitor(
     monitor_rect: tuple[int, int, int, int],
 ) -> Rect | None:
-    if is_portrait_monitor(monitor_rect):
-        return None
     left, top, right, bottom = monitor_rect
+    width = right - left
+    height = bottom - top
+    if height > width:
+        if (width, height) != SUPPORTED_PORTRAIT_SIZE:
+            return None
+        return Rect(
+            left=left + PORTRAIT_COMMENTS_OVERLAY_RIGHT - PORTRAIT_COMMENTS_OVERLAY_WIDTH,
+            top=top + PORTRAIT_COMMENTS_OVERLAY_Y,
+            width=PORTRAIT_COMMENTS_OVERLAY_WIDTH,
+            height=PORTRAIT_COMMENTS_OVERLAY_HEIGHT,
+        )
     return Rect(
         left=left + COMMENTS_OVERLAY_X,
         top=top + COMMENTS_OVERLAY_Y,
