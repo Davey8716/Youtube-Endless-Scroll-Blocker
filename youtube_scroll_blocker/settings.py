@@ -13,6 +13,7 @@ SETTINGS_FILE_NAME = "settings.json"
 
 @dataclass(frozen=True)
 class BlockerSettings:
+    start_with_windows_enabled: bool = False
     feed_recommendations_enabled: bool = True
     watch_recommendations_enabled: bool = True
     comments_enabled: bool = True
@@ -56,6 +57,11 @@ class SettingsStore:
         legacy_recommendations = payload.get("recommendations_enabled")
         legacy_value = legacy_recommendations if isinstance(legacy_recommendations, bool) else None
         return BlockerSettings(
+            start_with_windows_enabled=_boolean_setting(
+                payload,
+                "start_with_windows_enabled",
+                defaults.start_with_windows_enabled,
+            ),
             feed_recommendations_enabled=_boolean_setting(
                 payload,
                 "feed_recommendations_enabled",

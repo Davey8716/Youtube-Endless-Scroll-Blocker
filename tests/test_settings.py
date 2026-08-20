@@ -25,6 +25,7 @@ def test_settings_round_trip_uses_atomic_replace(tmp_path: Path, monkeypatch) ->
 
     monkeypatch.setattr(os, "replace", tracked_replace)
     settings = BlockerSettings(
+        start_with_windows_enabled=True,
         feed_recommendations_enabled=False,
         watch_recommendations_enabled=True,
         comments_enabled=False,
@@ -40,6 +41,7 @@ def test_partial_settings_use_defaults_for_missing_values(tmp_path: Path) -> Non
     path = tmp_path / "settings.json"
     path.write_text(json.dumps({"feed_recommendations_enabled": False}), encoding="utf-8")
     assert SettingsStore(path).load() == BlockerSettings(
+        start_with_windows_enabled=False,
         feed_recommendations_enabled=False,
         watch_recommendations_enabled=True,
         comments_enabled=True,
@@ -88,6 +90,7 @@ def test_malformed_or_wrongly_typed_settings_use_defaults(tmp_path: Path) -> Non
     wrong_types.write_text(
         json.dumps(
             {
+                "start_with_windows_enabled": 1,
                 "recommendations_enabled": "no",
                 "feed_recommendations_enabled": "no",
                 "watch_recommendations_enabled": 0,

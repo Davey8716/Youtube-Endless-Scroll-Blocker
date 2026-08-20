@@ -1,6 +1,10 @@
 from PySide6.QtWidgets import QApplication, QMenu
 
-from youtube_scroll_blocker.app import TrayRuntime
+from youtube_scroll_blocker.app import (
+    PAUSE_DURATIONS_MINUTES,
+    TRAY_MENU_STYLESHEET,
+    TrayRuntime,
+)
 from youtube_scroll_blocker.browser_detection import DetectionResult
 from youtube_scroll_blocker.controller import OverlayController
 from youtube_scroll_blocker.geometry import Rect
@@ -22,12 +26,32 @@ class FakeOverlay:
 
 
 class FakeSettingsStore:
-    def __init__(self) -> None:
+    def __init__(self, succeeds: bool = True) -> None:
         self.saved: list[BlockerSettings] = []
+        self.succeeds = succeeds
 
     def save(self, settings: BlockerSettings) -> bool:
         self.saved.append(settings)
-        return True
+        return self.succeeds
+
+
+class FakeStartupManager:
+    def __init__(self) -> None:
+        self.calls: list[bool] = []
+        self.error: OSError | None = None
+
+    def set_enabled(self, enabled: bool) -> None:
+        self.calls.append(enabled)
+        if self.error is not None:
+            raise self.error
+
+
+class FakeTray:
+    def __init__(self) -> None:
+        self.messages: list[tuple] = []
+
+    def showMessage(self, *args) -> None:
+        self.messages.append(args)
 
 
 def test_tray_actions_reflect_and_update_individual_blockers() -> None:
@@ -37,6 +61,8 @@ def test_tray_actions_reflect_and_update_individual_blockers() -> None:
     runtime = TrayRuntime.__new__(TrayRuntime)
     runtime._controller = OverlayController(overlay, comments_overlay)
     runtime._settings_store = FakeSettingsStore()
+    runtime._startup_manager = FakeStartupManager()
+    runtime._start_with_windows_enabled = False
     runtime._latest_result = DetectionResult(
         OverlayMode.WATCH,
         (0, 0, 1920, 1080),
@@ -48,6 +74,20 @@ def test_tray_actions_reflect_and_update_individual_blockers() -> None:
 
     try:
         runtime._build_menu()
+        assert runtime._menu.actions()[0] is runtime._start_with_windows_action
+        assert runtime._start_with_windows_action.text() == "Start with Windows"
+        assert runtime._start_with_windows_action.isCheckable()
+        assert not runtime._start_with_windows_action.isChecked()
+        assert runtime._menu.styleSheet() == TRAY_MENU_STYLESHEET
+        assert runtime._pause_menu.title() == "Pause"
+        assert tuple(runtime._pause_actions) == PAUSE_DURATIONS_MINUTES
+        assert [action.text() for action in runtime._pause_menu.actions()] == [
+            "5 minutes",
+            "15 minutes",
+            "30 minutes",
+            "60 minutes",
+            "120 minutes",
+        ]
         assert runtime._feed_recommendations_action.isCheckable()
         assert runtime._watch_recommendations_action.isCheckable()
         assert runtime._comments_action.isCheckable()
@@ -96,6 +136,7 @@ def test_tray_actions_reflect_and_update_individual_blockers() -> None:
         runtime._toggle_action.trigger()
         assert runtime._controller.enabled is False
         assert runtime._toggle_action.text() == "Turn On"
+        assert not runtime._pause_menu_action.isEnabled()
         assert not runtime._feed_recommendations_action.isChecked()
         assert not runtime._watch_recommendations_action.isChecked()
         assert not runtime._comments_action.isChecked()
@@ -106,6 +147,166 @@ def test_tray_actions_reflect_and_update_individual_blockers() -> None:
         assert runtime._controller.feed_recommendations_enabled is False
         assert runtime._controller.watch_recommendations_enabled is False
         assert runtime._controller.comments_enabled is False
+    finally:
+        runtime._menu.close()
+        runtime._menu.deleteLater()
+        app.processEvents()
+
+
+def test_pause_actions_disable_temporarily_and_resume_without_saving() -> None:
+    app = QApplication.instance() or QApplication([])
+    overlay = FakeOverlay()
+    comments_overlay = FakeOverlay()
+    runtime = TrayRuntime.__new__(TrayRuntime)
+    runtime._controller = OverlayController(overlay, comments_overlay)
+    runtime._settings_store = FakeSettingsStore()
+    runtime._startup_manager = FakeStartupManager()
+    runtime._start_with_windows_enabled = False
+    runtime._latest_result = DetectionResult(
+        OverlayMode.WATCH,
+        (0, 0, 1920, 1080),
+        browser_hwnd=101,
+        player_visible=False,
+    )
+    runtime._menu = QMenu()
+    runtime._shutting_down = False
+
+    try:
+        runtime._build_menu()
+
+        for minutes in PAUSE_DURATIONS_MINUTES:
+            runtime._pause_actions[minutes].trigger()
+            assert runtime._pause_active
+            assert not runtime._controller.enabled
+            assert runtime._toggle_action.text() == "Turn On"
+            assert runtime._pause_menu.title() == f"Paused for {minutes} minutes"
+            assert runtime._pause_menu_action.text() == f"Paused for {minutes} minutes"
+            assert runtime._pause_menu_action.isEnabled()
+            assert runtime._pause_timer.isActive()
+            assert runtime._pause_timer.interval() == minutes * 60 * 1000
+
+        assert overlay.hide_count == len(PAUSE_DURATIONS_MINUTES)
+        assert comments_overlay.hide_count == len(PAUSE_DURATIONS_MINUTES)
+        assert runtime._settings_store.saved == []
+
+        runtime._toggle_action.trigger()
+        assert runtime._controller.enabled
+        assert not runtime._pause_active
+        assert not runtime._pause_timer.isActive()
+        assert runtime._toggle_action.text() == "Turn Off"
+        assert runtime._pause_menu.title() == "Pause"
+        assert runtime._pause_menu_action.text() == "Pause"
+        assert runtime._pause_menu_action.isEnabled()
+        assert overlay.shown_at == [(Rect(1360, 170, 536, 858), 101)]
+        assert comments_overlay.shown_at == [(Rect(10, 170, 1360, 910), 101)]
+
+        runtime._toggle_action.trigger()
+        assert not runtime._controller.enabled
+        assert not runtime._pause_active
+        assert not runtime._pause_menu_action.isEnabled()
+        assert runtime._pause_menu_action.text() == "Pause"
+        runtime._start_pause(30)
+        assert not runtime._pause_active
+        assert not runtime._pause_timer.isActive()
+
+        runtime._toggle_action.trigger()
+        overlay.shown_at.clear()
+        comments_overlay.shown_at.clear()
+        runtime._pause_actions[5].trigger()
+        runtime._finish_pause()
+        assert runtime._controller.enabled
+        assert not runtime._pause_active
+        assert not runtime._pause_timer.isActive()
+        assert runtime._toggle_action.text() == "Turn Off"
+        assert runtime._pause_menu_action.text() == "Pause"
+        assert overlay.shown_at == [(Rect(1360, 170, 536, 858), 101)]
+        assert comments_overlay.shown_at == [(Rect(10, 170, 1360, 910), 101)]
+        assert runtime._settings_store.saved == []
+    finally:
+        runtime._pause_timer.stop()
+        runtime._menu.close()
+        runtime._menu.deleteLater()
+        app.processEvents()
+
+
+def test_startup_action_updates_registry_and_preserves_preference_in_settings() -> None:
+    app = QApplication.instance() or QApplication([])
+    runtime = TrayRuntime.__new__(TrayRuntime)
+    runtime._controller = OverlayController(FakeOverlay(), FakeOverlay())
+    runtime._settings_store = FakeSettingsStore()
+    runtime._startup_manager = FakeStartupManager()
+    runtime._start_with_windows_enabled = False
+    runtime._latest_result = DetectionResult()
+    runtime._menu = QMenu()
+    runtime._shutting_down = False
+
+    try:
+        runtime._build_menu()
+        runtime._start_with_windows_action.setChecked(True)
+
+        assert runtime._startup_manager.calls == [True]
+        assert runtime._settings_store.saved[-1].start_with_windows_enabled is True
+
+        runtime._feed_recommendations_action.setChecked(False)
+        assert runtime._settings_store.saved[-1] == BlockerSettings(
+            start_with_windows_enabled=True,
+            feed_recommendations_enabled=False,
+            watch_recommendations_enabled=True,
+            comments_enabled=True,
+        )
+    finally:
+        runtime._menu.close()
+        runtime._menu.deleteLater()
+        app.processEvents()
+
+
+def test_startup_registry_failure_reverts_checkbox_and_does_not_save() -> None:
+    app = QApplication.instance() or QApplication([])
+    runtime = TrayRuntime.__new__(TrayRuntime)
+    runtime._controller = OverlayController(FakeOverlay(), FakeOverlay())
+    runtime._settings_store = FakeSettingsStore()
+    runtime._startup_manager = FakeStartupManager()
+    runtime._startup_manager.error = PermissionError("denied")
+    runtime._start_with_windows_enabled = False
+    runtime._latest_result = DetectionResult()
+    runtime._menu = QMenu()
+    runtime._tray = FakeTray()
+    runtime._shutting_down = False
+
+    try:
+        runtime._build_menu()
+        runtime._start_with_windows_action.setChecked(True)
+
+        assert not runtime._start_with_windows_action.isChecked()
+        assert runtime._start_with_windows_enabled is False
+        assert runtime._settings_store.saved == []
+        assert runtime._tray.messages
+    finally:
+        runtime._menu.close()
+        runtime._menu.deleteLater()
+        app.processEvents()
+
+
+def test_startup_setting_save_failure_rolls_back_registry_and_checkbox() -> None:
+    app = QApplication.instance() or QApplication([])
+    runtime = TrayRuntime.__new__(TrayRuntime)
+    runtime._controller = OverlayController(FakeOverlay(), FakeOverlay())
+    runtime._settings_store = FakeSettingsStore(succeeds=False)
+    runtime._startup_manager = FakeStartupManager()
+    runtime._start_with_windows_enabled = False
+    runtime._latest_result = DetectionResult()
+    runtime._menu = QMenu()
+    runtime._tray = FakeTray()
+    runtime._shutting_down = False
+
+    try:
+        runtime._build_menu()
+        runtime._start_with_windows_action.setChecked(True)
+
+        assert runtime._startup_manager.calls == [True, False]
+        assert not runtime._start_with_windows_action.isChecked()
+        assert runtime._start_with_windows_enabled is False
+        assert runtime._tray.messages
     finally:
         runtime._menu.close()
         runtime._menu.deleteLater()
