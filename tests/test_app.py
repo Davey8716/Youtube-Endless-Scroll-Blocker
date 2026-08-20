@@ -55,7 +55,7 @@ def test_tray_actions_reflect_and_update_individual_blockers() -> None:
 
         runtime._recommendations_action.setChecked(False)
         assert runtime._controller.recommendations_enabled is False
-        assert comments_overlay.shown_at == [(Rect(0, 170, 1360, 910), 101)]
+        assert comments_overlay.shown_at == [(Rect(10, 170, 1360, 910), 101)]
         assert runtime._settings_store.saved[-1] == BlockerSettings(
             recommendations_enabled=False,
             comments_enabled=True,

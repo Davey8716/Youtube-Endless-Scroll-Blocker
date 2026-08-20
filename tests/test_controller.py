@@ -40,7 +40,7 @@ def test_watch_detection_uses_watch_bounds() -> None:
             player_visible=True,
         )
     )
-    assert overlay.shown_at == [(Rect(3280, 170, 536, 860), 102)]
+    assert overlay.shown_at == [(Rect(3280, 170, 536, 858), 102)]
     assert not comments_overlay.shown_at
     assert comments_overlay.hide_count == 1
 
@@ -60,7 +60,7 @@ def test_theatre_mode_hides_recommendations_but_keeps_comments_independent() -> 
     )
     assert not overlay.shown_at
     assert overlay.hide_count == 1
-    assert comments_overlay.shown_at == [(Rect(0, 170, 1360, 910), 102)]
+    assert comments_overlay.shown_at == [(Rect(10, 170, 1360, 910), 102)]
 
 
 def test_leaving_theatre_mode_restores_recommendations() -> None:
@@ -85,7 +85,7 @@ def test_leaving_theatre_mode_restores_recommendations() -> None:
             theatre_mode=False,
         )
     )
-    assert overlay.shown_at == [(Rect(1360, 170, 536, 860), 102)]
+    assert overlay.shown_at == [(Rect(1360, 170, 536, 858), 102)]
 
 
 def test_watch_comments_show_when_player_is_no_longer_visible() -> None:
@@ -100,8 +100,8 @@ def test_watch_comments_show_when_player_is_no_longer_visible() -> None:
             player_visible=False,
         )
     )
-    assert overlay.shown_at == [(Rect(1360, 170, 536, 860), 102)]
-    assert comments_overlay.shown_at == [(Rect(0, 170, 1360, 910), 102)]
+    assert overlay.shown_at == [(Rect(1360, 170, 536, 858), 102)]
+    assert comments_overlay.shown_at == [(Rect(10, 170, 1360, 910), 102)]
 
     controller.handle_detection(
         DetectionResult(
@@ -206,7 +206,7 @@ def test_comments_remain_independent_when_recommendations_are_disabled() -> None
         )
     )
     assert not overlay.shown_at
-    assert comments_overlay.shown_at == [(Rect(0, 170, 1360, 910), 101)]
+    assert comments_overlay.shown_at == [(Rect(10, 170, 1360, 910), 101)]
 
 
 def test_recommendations_remain_independent_when_comments_are_disabled() -> None:
@@ -226,7 +226,7 @@ def test_recommendations_remain_independent_when_comments_are_disabled() -> None
             player_visible=False,
         )
     )
-    assert overlay.shown_at == [(Rect(1360, 170, 536, 860), 101)]
+    assert overlay.shown_at == [(Rect(1360, 170, 536, 858), 101)]
     assert not comments_overlay.shown_at
 
 
@@ -275,4 +275,4 @@ def test_master_toggle_preserves_individual_preferences() -> None:
     assert controller.recommendations_enabled is False
     assert controller.comments_enabled is True
     assert not overlay.shown_at
-    assert comments_overlay.shown_at == [(Rect(0, 170, 1360, 910), 101)]
+    assert comments_overlay.shown_at == [(Rect(10, 170, 1360, 910), 101)]
