@@ -21,7 +21,7 @@ from .startup import StartupManager
 
 APP_NAME = "YouTube Endless Scroll Blocker"
 POLL_INTERVAL_SECONDS = 0.25
-PAUSE_DURATIONS_MINUTES = (1,5, 15, 30,60,120,240)
+PAUSE_DURATIONS_MINUTES = (5, 15, 30,60,120)
 TRAY_MENU_STYLESHEET = """
 QMenu {
     background-color: #0b1f3a;
@@ -55,6 +55,14 @@ QMenu::separator {
     margin: 5px 8px;
 }
 """
+
+
+def _pause_duration_label(minutes: int) -> str:
+    if minutes >= 60:
+        hours = minutes / 60
+        unit = "hour" if hours == 1 else "hours"
+        return f"{hours:g} {unit}"
+    return f"{minutes} minutes"
 
 
 def resource_path(relative_path: str) -> Path:
@@ -139,7 +147,7 @@ class TrayRuntime:
         self._pause_menu = QMenu("Pause", self._menu)
         self._pause_actions: dict[int, QAction] = {}
         for minutes in PAUSE_DURATIONS_MINUTES:
-            action = QAction(f"{minutes} minutes", self._pause_menu)
+            action = QAction(_pause_duration_label(minutes), self._pause_menu)
             action.triggered.connect(
                 lambda checked=False, duration=minutes: self._start_pause(duration)
             )
@@ -214,7 +222,8 @@ class TrayRuntime:
     def _sync_master_controls(self) -> None:
         self._toggle_action.setText("Turn Off" if self._controller.enabled else "Turn On")
         if self._pause_active and self._pause_minutes is not None:
-            self._pause_menu.setTitle(f"Paused for {self._pause_minutes} minutes")
+            duration = _pause_duration_label(self._pause_minutes)
+            self._pause_menu.setTitle(f"Paused for {duration}")
         else:
             self._pause_menu.setTitle("Pause")
         self._pause_menu_action.setEnabled(self._controller.enabled or self._pause_active)

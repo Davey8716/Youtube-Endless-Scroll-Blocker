@@ -4,6 +4,7 @@ from youtube_scroll_blocker.app import (
     PAUSE_DURATIONS_MINUTES,
     TRAY_MENU_STYLESHEET,
     TrayRuntime,
+    _pause_duration_label,
 )
 from youtube_scroll_blocker.browser_detection import DetectionResult
 from youtube_scroll_blocker.controller import OverlayController
@@ -82,11 +83,7 @@ def test_tray_actions_reflect_and_update_individual_blockers() -> None:
         assert runtime._pause_menu.title() == "Pause"
         assert tuple(runtime._pause_actions) == PAUSE_DURATIONS_MINUTES
         assert [action.text() for action in runtime._pause_menu.actions()] == [
-            "5 minutes",
-            "15 minutes",
-            "30 minutes",
-            "60 minutes",
-            "120 minutes",
+            _pause_duration_label(minutes) for minutes in PAUSE_DURATIONS_MINUTES
         ]
         assert runtime._feed_recommendations_action.isCheckable()
         assert runtime._watch_recommendations_action.isCheckable()
@@ -179,8 +176,9 @@ def test_pause_actions_disable_temporarily_and_resume_without_saving() -> None:
             assert runtime._pause_active
             assert not runtime._controller.enabled
             assert runtime._toggle_action.text() == "Turn On"
-            assert runtime._pause_menu.title() == f"Paused for {minutes} minutes"
-            assert runtime._pause_menu_action.text() == f"Paused for {minutes} minutes"
+            expected_duration = _pause_duration_label(minutes)
+            assert runtime._pause_menu.title() == f"Paused for {expected_duration}"
+            assert runtime._pause_menu_action.text() == f"Paused for {expected_duration}"
             assert runtime._pause_menu_action.isEnabled()
             assert runtime._pause_timer.isActive()
             assert runtime._pause_timer.interval() == minutes * 60 * 1000

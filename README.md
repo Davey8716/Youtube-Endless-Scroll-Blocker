@@ -43,7 +43,7 @@ The app starts enabled and appears in the Windows system tray. Only one instance
 
 - **Start with Windows** registers or removes the app for the current Windows user. It is off by default.
 - **Turn Off / Turn On** temporarily disables or enables every blocker for the current session.
-- **Pause** disables every blocker for 5, 15, or 30 minutes, then turns blocking back on automatically. While active, the tray entry shows the selected pause duration; selecting **Turn On** resumes blocking early.
+- **Pause** disables every blocker for the selected number of minutes or hours, then turns blocking back on automatically. While active, the tray entry shows the selected pause duration; selecting **Turn On** resumes blocking early.
 - **Block home and discovery feeds** controls YouTube's non-video recommendation feeds.
 - **Block watch-page suggestions** controls the recommendations sidebar beside a video.
 - **Block comments** controls the comments overlay that appears after the video player has been scrolled out of view.
