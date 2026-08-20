@@ -45,6 +45,49 @@ def test_watch_detection_uses_watch_bounds() -> None:
     assert comments_overlay.hide_count == 1
 
 
+def test_theatre_mode_hides_recommendations_but_keeps_comments_independent() -> None:
+    overlay = FakeOverlay()
+    comments_overlay = FakeOverlay()
+    controller = OverlayController(overlay, comments_overlay)
+    controller.handle_detection(
+        DetectionResult(
+            OverlayMode.WATCH,
+            (0, 0, 1920, 1080),
+            browser_hwnd=102,
+            player_visible=False,
+            theatre_mode=True,
+        )
+    )
+    assert not overlay.shown_at
+    assert overlay.hide_count == 1
+    assert comments_overlay.shown_at == [(Rect(0, 170, 1360, 910), 102)]
+
+
+def test_leaving_theatre_mode_restores_recommendations() -> None:
+    overlay = FakeOverlay()
+    comments_overlay = FakeOverlay()
+    controller = OverlayController(overlay, comments_overlay)
+    controller.handle_detection(
+        DetectionResult(
+            OverlayMode.WATCH,
+            (0, 0, 1920, 1080),
+            browser_hwnd=102,
+            player_visible=True,
+            theatre_mode=True,
+        )
+    )
+    controller.handle_detection(
+        DetectionResult(
+            OverlayMode.WATCH,
+            (0, 0, 1920, 1080),
+            browser_hwnd=102,
+            player_visible=True,
+            theatre_mode=False,
+        )
+    )
+    assert overlay.shown_at == [(Rect(1360, 170, 536, 860), 102)]
+
+
 def test_watch_comments_show_when_player_is_no_longer_visible() -> None:
     overlay = FakeOverlay()
     comments_overlay = FakeOverlay()

@@ -65,7 +65,7 @@ class OverlayController:
             self.hide()
             return
         if result.mode is OverlayMode.WATCH:
-            if self.recommendations_enabled:
+            if self.recommendations_enabled and result.theatre_mode is not True:
                 rect = watch_overlay_rect_for_monitor(result.monitor_rect)
                 self._overlay.show_at(rect, result.browser_hwnd)
             else:

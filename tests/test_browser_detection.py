@@ -6,12 +6,18 @@ from youtube_scroll_blocker.url_rules import OverlayMode
 
 
 class StubAddressReader:
-    def __init__(self, url: str | None, visible: bool = True) -> None:
+    def __init__(
+        self,
+        url: str | None,
+        visible: bool = True,
+        theatre_mode: bool | None = None,
+    ) -> None:
         self.url = url
         self.visible = visible
+        self.theatre_mode = theatre_mode
 
     def inspect(self, _hwnd: int) -> AddressBarState:
-        return AddressBarState(self.url, self.visible)
+        return AddressBarState(self.url, self.visible, self.theatre_mode)
 
 
 class StubPlayerTracker:
@@ -70,8 +76,9 @@ class StubControl:
         automation_id: str | None = None,
         bounds: StubBounds | None = None,
         parent: "StubControl" | None = None,
+        control_type: str | None = None,
     ) -> None:
-        self.ControlTypeName = "EditControl" if value is not None else "WindowControl"
+        self.ControlTypeName = control_type or ("EditControl" if value is not None else "WindowControl")
         self.AutomationId = automation_id if automation_id is not None else (
             "address and search bar" if value is not None else ""
         )
@@ -162,6 +169,19 @@ def test_non_fullscreen_watch_page_uses_watch_overlay(monkeypatch) -> None:
     assert player_tracker.calls == [
         (101, (0, 0, 1920, 1080), "https://www.youtube.com/watch?v=test-id", True)
     ]
+
+
+def test_watch_page_propagates_theatre_mode(monkeypatch) -> None:
+    configure_active_brave(monkeypatch)
+    result = BrowserDetector(
+        StubAddressReader(
+            "https://www.youtube.com/watch?v=test-id",
+            theatre_mode=True,
+        ),
+        StubPlayerTracker(True),
+    ).detect()
+    assert result.mode is OverlayMode.WATCH
+    assert result.theatre_mode is True
 
 
 def test_search_results_are_visible_then_clicked_video_uses_watch_overlay(monkeypatch) -> None:
@@ -352,6 +372,130 @@ def test_address_bar_inspection_reports_offscreen_chrome(monkeypatch) -> None:
         "https://www.youtube.com/watch?v=test-id",
         False,
     )
+
+
+def watch_page_controls(
+    player: StubControl | None,
+) -> StubControl:
+    address_bar = StubControl(value="https://www.youtube.com/watch?v=test-id")
+    children = [player] if player is not None else []
+    for _depth in range(10):
+        children = [StubControl(children=children)]
+    document = StubControl(
+        children=children,
+        control_type="DocumentControl",
+        bounds=StubBounds(4, 114, 1916, 1028),
+    )
+    empty_document = StubControl(
+        control_type="DocumentControl",
+        bounds=StubBounds(4, 114, 1916, 1028),
+    )
+    content_pane = StubControl(
+        children=[document],
+        name="Chrome Legacy Window",
+        control_type="PaneControl",
+        bounds=StubBounds(4, 114, 1916, 1028),
+    )
+    return StubControl(children=[address_bar, empty_document, content_pane])
+
+
+def test_address_bar_inspection_detects_default_view_from_player_width(monkeypatch) -> None:
+    player = StubControl(
+        name="YouTube Video Player",
+        control_type="GroupControl",
+        bounds=StubBounds(20, 182, 1352, 931),
+    )
+    root = watch_page_controls(player)
+    monkeypatch.setattr(browser_detection.auto, "ControlFromHandle", lambda _hwnd: root)
+    monkeypatch.setattr(browser_detection.win32gui, "GetWindowRect", lambda _hwnd: (0, 0, 1920, 1080))
+
+    assert browser_detection.BraveAddressBarReader().inspect(101) == AddressBarState(
+        "https://www.youtube.com/watch?v=test-id",
+        True,
+        False,
+    )
+
+
+def test_address_bar_inspection_detects_theatre_mode_from_player_width(monkeypatch) -> None:
+    player = StubControl(
+        name="YouTube Video Player",
+        control_type="GroupControl",
+        bounds=StubBounds(4, 170, 1901, 915),
+    )
+    root = watch_page_controls(player)
+    monkeypatch.setattr(browser_detection.auto, "ControlFromHandle", lambda _hwnd: root)
+    monkeypatch.setattr(browser_detection.win32gui, "GetWindowRect", lambda _hwnd: (0, 0, 1920, 1080))
+
+    assert browser_detection.BraveAddressBarReader().inspect(101) == AddressBarState(
+        "https://www.youtube.com/watch?v=test-id",
+        True,
+        True,
+    )
+
+
+def test_theatre_mode_tracks_recreated_player_on_same_url(monkeypatch) -> None:
+    roots = [
+        watch_page_controls(
+            StubControl(
+                name="YouTube Video Player",
+                control_type="GroupControl",
+                bounds=bounds,
+            )
+        )
+        for bounds in (
+            StubBounds(4, 170, 1901, 915),
+            StubBounds(20, 182, 1352, 931),
+            StubBounds(4, 170, 1901, 915),
+        )
+    ]
+    current = {"root": roots[0]}
+    monkeypatch.setattr(
+        browser_detection.auto,
+        "ControlFromHandle",
+        lambda _hwnd: current["root"],
+    )
+    monkeypatch.setattr(browser_detection.win32gui, "GetWindowRect", lambda _hwnd: (0, 0, 1920, 1080))
+    reader = browser_detection.BraveAddressBarReader()
+
+    assert reader.inspect(101).theatre_mode is True
+    current["root"] = roots[1]
+    assert reader.inspect(101).theatre_mode is False
+    current["root"] = roots[2]
+    assert reader.inspect(101).theatre_mode is True
+
+
+def test_theatre_detection_does_not_require_visible_player_buttons(monkeypatch) -> None:
+    player = StubControl(
+        name="YouTube Video Player",
+        control_type="GroupControl",
+        bounds=StubBounds(4, 170, 1901, 915),
+    )
+    root = watch_page_controls(player)
+    monkeypatch.setattr(browser_detection.auto, "ControlFromHandle", lambda _hwnd: root)
+    monkeypatch.setattr(browser_detection.win32gui, "GetWindowRect", lambda _hwnd: (0, 0, 1920, 1080))
+
+    assert browser_detection.BraveAddressBarReader().inspect(101).theatre_mode is True
+
+
+def test_missing_player_control_returns_unknown(monkeypatch) -> None:
+    root = watch_page_controls(None)
+    monkeypatch.setattr(browser_detection.auto, "ControlFromHandle", lambda _hwnd: root)
+    monkeypatch.setattr(browser_detection.win32gui, "GetWindowRect", lambda _hwnd: (0, 0, 1920, 1080))
+
+    assert browser_detection.BraveAddressBarReader().inspect(101).theatre_mode is None
+
+
+def test_invalid_player_bounds_return_unknown(monkeypatch) -> None:
+    player = StubControl(
+        name="YouTube Video Player",
+        control_type="GroupControl",
+    )
+    player.BoundingRectangle = None
+    root = watch_page_controls(player)
+    monkeypatch.setattr(browser_detection.auto, "ControlFromHandle", lambda _hwnd: root)
+    monkeypatch.setattr(browser_detection.win32gui, "GetWindowRect", lambda _hwnd: (0, 0, 1920, 1080))
+
+    assert browser_detection.BraveAddressBarReader().inspect(101).theatre_mode is None
 
 
 def test_full_monitor_window_with_hidden_chrome_is_fullscreen(monkeypatch) -> None:

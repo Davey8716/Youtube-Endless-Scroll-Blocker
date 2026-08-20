@@ -11,6 +11,7 @@ A small Windows tray app that places click-blocking overlays over YouTube's most
 | --- | --- |
 | YouTube home and other non-video feeds | The main recommendations area is covered and cannot be clicked. |
 | A regular watch page | The recommendations sidebar is covered. |
+| A watch page in Theatre mode | The recommendations sidebar overlay is hidden so the enlarged player remains unobstructed. |
 | A watch page after the player is scrolled out of view | The comments area is covered as well. Scrolling up reveals the player again and removes the comments overlay. |
 | Search results, channel pages, playlists, and the **You** section | No overlay, so navigation and intentional viewing remain available. |
 | YouTube Studio video tools | No overlay. |
